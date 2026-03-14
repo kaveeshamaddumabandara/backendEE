@@ -7,11 +7,15 @@ const { protect, authorize } = require('../middleware/auth.middleware');
 router.use(protect);
 router.use(authorize('carereceiver'));
 
+// Dashboard routes
+router.get('/dashboard', careReceiverController.getDashboardStats);
+
 // Profile routes
 router.get('/profile', careReceiverController.getProfile);
 router.put('/profile', careReceiverController.updateProfile);
 
 // Caregiver routes
 router.get('/assigned-caregivers', careReceiverController.getAssignedCaregivers);
+router.get('/available-caregivers', careReceiverController.getAvailableCaregivers);
 
 module.exports = router;

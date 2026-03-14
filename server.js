@@ -18,12 +18,32 @@ const profileRoutes = require('./routes/profile.routes');
 const feedbackRoutes = require('./routes/feedback.routes');
 const paymentRoutes = require('./routes/payment.routes');
 const uploadRoutes = require('./routes/upload.routes');
+const bookingRequestRoutes = require('./routes/bookingRequest.routes');
+const bookingRoutes = require('./routes/booking.routes');
+const careDocumentationRoutes = require('./routes/careDocumentation.routes');
+const caregiverPaymentRoutes = require('./routes/caregiverPayment.routes');
+const contactRoutes = require('./routes/contact.routes');
 
 // Initialize express app
 const app = express();
 
 // Middleware
-app.use(cors());
+// CORS configuration for mobile app
+app.use(cors({
+  origin: '*', // Allow all origins for development
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+}));
+
+// Disable caching for API responses to ensure fresh data
+app.use((req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  next();
+});
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan('dev'));
@@ -32,10 +52,7 @@ app.use(morgan('dev'));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Database connection
-mongoose.connect(process.env.MONGODB_URI, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
+mongoose.connect(process.env.MONGODB_URI)
 .then(() => {
   console.log('✅ MongoDB connected successfully');
   // Initialize default admin user
@@ -56,6 +73,11 @@ app.use('/api/profile', profileRoutes);
 app.use('/api/feedback', feedbackRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/upload', uploadRoutes);
+app.use('/api/caregiver', bookingRequestRoutes);
+app.use('/api/caregiver', bookingRoutes);
+app.use('/api/care-documentation', careDocumentationRoutes);
+app.use('/api/caregiver/payment', caregiverPaymentRoutes);
+app.use('/api/contact', contactRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {
@@ -84,7 +106,7 @@ app.use((req, res) => {
 });
 
 // Start server
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT} in ${process.env.NODE_ENV} mode`);
 });

@@ -7,6 +7,12 @@ const { protect, authorize } = require('../middleware/auth.middleware');
 router.use(protect);
 router.use(authorize('caregiver'));
 
+// Dashboard routes
+router.get('/dashboard/stats', caregiverController.getDashboardStats);
+router.get('/dashboard/performance', caregiverController.getPerformanceMetrics);
+router.get('/dashboard/satisfaction', caregiverController.getClientSatisfaction);
+router.get('/dashboard/feedback', caregiverController.getRecentFeedback);
+
 // Profile routes
 router.get('/profile', caregiverController.getProfile);
 router.put('/profile', caregiverController.updateProfile);

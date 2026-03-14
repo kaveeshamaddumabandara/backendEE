@@ -56,6 +56,11 @@ const careReceiverSchema = new mongoose.Schema({
     specialization: String,
     hospital: String,
   },
+  emergencyContact: {
+    name: String,
+    phone: String,
+    relationship: String,
+  },
 }, {
   timestamps: true,
 });

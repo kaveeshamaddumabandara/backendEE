@@ -17,8 +17,14 @@ const caregiverSchema = new mongoose.Schema({
   },
   specialization: [{
     type: String,
-    enum: ['alzheimer', 'dementia', 'mobility', 'medical', 'companionship', 'hospice', 'other'],
   }],
+  skills: [{
+    type: String,
+  }],
+  education: {
+    type: String,
+    default: '',
+  },
   certifications: [{
     name: String,
     issuedBy: String,
@@ -26,6 +32,10 @@ const caregiverSchema = new mongoose.Schema({
     expiryDate: Date,
     documentUrl: String,
   }],
+  certificationsText: {
+    type: String,
+    default: '',
+  },
   availability: {
     days: [{
       type: String,
@@ -35,6 +45,19 @@ const caregiverSchema = new mongoose.Schema({
       start: String,
       end: String,
     }],
+  },
+  availabilityType: {
+    type: String,
+    enum: ['full-time', 'part-time', 'weekends only', 'flexible'],
+    default: 'flexible',
+  },
+  hasTransportation: {
+    type: Boolean,
+    default: false,
+  },
+  travelRadius: {
+    type: String,
+    default: '5',
   },
   hourlyRate: {
     type: Number,
@@ -53,6 +76,42 @@ const caregiverSchema = new mongoose.Schema({
   assignedCareReceivers: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'CareReceiver',
+  }],
+  registrationFeePaid: {
+    type: Boolean,
+    default: false,
+  },
+  registrationFeeAmount: {
+    type: Number,
+    default: 1000, // LKR 1000
+  },
+  registrationFeePaymentId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Payment',
+  },
+  totalBookingsCompleted: {
+    type: Number,
+    default: 0,
+  },
+  lastCommissionPaymentDate: {
+    type: Date,
+  },
+  lastCommissionPaymentBookingCount: {
+    type: Number,
+    default: 0,
+  },
+  commissionRate: {
+    type: Number,
+    default: 500, // LKR 500 per 20 bookings
+  },
+  commissionPaymentHistory: [{
+    paymentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Payment',
+    },
+    amount: Number,
+    bookingCount: Number,
+    paidAt: Date,
   }],
   status: {
     type: String,

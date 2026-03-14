@@ -6,15 +6,24 @@ const paymentSchema = new mongoose.Schema({
     ref: 'User',
     required: [true, 'User ID is required']
   },
+  caregiverId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Caregiver',
+  },
   amount: {
     type: Number,
     required: [true, 'Payment amount is required'],
     min: [0, 'Amount cannot be negative']
   },
+  hoursWorked: {
+    type: Number,
+    default: 0,
+    min: 0,
+  },
   currency: {
     type: String,
-    default: 'USD',
-    enum: ['USD', 'EUR', 'GBP', 'INR']
+    default: 'LKR',
+    enum: ['USD', 'EUR', 'GBP', 'INR', 'LKR']
   },
   paymentMethod: {
     type: String,
@@ -28,8 +37,7 @@ const paymentSchema = new mongoose.Schema({
   },
   transactionId: {
     type: String,
-    required: [true, 'Transaction ID is required'],
-    unique: true
+    required: [true, 'Transaction ID is required']
   },
   description: {
     type: String,
@@ -39,6 +47,22 @@ const paymentSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Service type is required'],
     enum: ['Hourly Care', 'Care Package', 'Emergency Care', 'Subscription', 'Specialized Care', 'Companion Care']
+  },
+  paymentType: {
+    type: String,
+    required: true,
+    enum: ['registration_fee', 'booking_commission', 'service_payment'],
+    default: 'service_payment'
+  },
+  paidTo: {
+    type: String,
+    enum: ['admin', 'caregiver', 'platform'],
+    default: 'platform'
+  },
+  bookingCount: {
+    type: Number,
+    default: 0,
+    min: 0
   },
   metadata: {
     type: Map,
@@ -51,7 +75,6 @@ const paymentSchema = new mongoose.Schema({
 // Indexes for better query performance
 paymentSchema.index({ userId: 1, createdAt: -1 });
 paymentSchema.index({ status: 1 });
-paymentSchema.index({ transactionId: 1 });
 paymentSchema.index({ createdAt: -1 });
 
 // Generate unique transaction ID

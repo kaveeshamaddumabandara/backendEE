@@ -58,7 +58,7 @@ Production mode:
 npm start
 ```
 
-The server will start on http://localhost:5000
+The server will start on http://localhost:3001
 
 ## Default Admin Credentials
 
@@ -134,7 +134,7 @@ Use Postman or any API client:
 
 1. **Register a user:**
 ```json
-POST http://localhost:5000/api/auth/register
+POST http://localhost:3001/api/auth/register
 {
   "name": "John Doe",
   "email": "john@example.com",
@@ -146,7 +146,7 @@ POST http://localhost:5000/api/auth/register
 
 2. **Login:**
 ```json
-POST http://localhost:5000/api/auth/login
+POST http://localhost:3001/api/auth/login
 {
   "email": "admin@elderease.com",
   "password": "Admin@123"

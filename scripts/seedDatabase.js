@@ -6,6 +6,9 @@ const Caregiver = require('../models/Caregiver.model');
 const CareReceiver = require('../models/CareReceiver.model');
 const Feedback = require('../models/Feedback.model');
 const Payment = require('../models/Payment.model');
+const Booking = require('../models/Booking.model');
+const BookingRequest = require('../models/BookingRequest.model');
+const CareDocumentation = require('../models/CareDocumentation.model');
 
 // Connect to MongoDB
 const connectDB = async () => {
@@ -29,6 +32,9 @@ const clearDatabase = async () => {
   await CareReceiver.deleteMany({});
   await Feedback.deleteMany({});
   await Payment.deleteMany({});
+  await Booking.deleteMany({});
+  await BookingRequest.deleteMany({});
+  await CareDocumentation.deleteMany({});
   console.log('✓ Database cleared');
 };
 
@@ -904,6 +910,203 @@ const createPayments = async (caregivers, careReceivers) => {
   console.log(`✓ Created ${payments.length} payment records`);
 };
 
+// Create bookings
+const createBookings = async (caregivers, careReceivers) => {
+  console.log('\n📅 Creating bookings...');
+  
+  const now = new Date();
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const nextWeek = new Date(now);
+  nextWeek.setDate(nextWeek.getDate() + 7);
+  
+  const bookings = [
+    {
+      caregiverId: caregivers[0].user._id,
+      careReceiverId: careReceivers[0].user._id,
+      date: now,
+      startTime: '09:00',
+      endTime: '17:00',
+      duration: 8,
+      serviceType: 'Personal Care',
+      status: 'confirmed',
+      location: '123 Galle Road, Colombo 5',
+      needs: 'Daily care, medication reminders, meal preparation',
+      hourlyRate: 800,
+      notes: 'Regular full day care',
+    },
+    {
+      caregiverId: caregivers[0].user._id,
+      careReceiverId: careReceivers[1].user._id,
+      date: tomorrow,
+      startTime: '10:00',
+      endTime: '14:00',
+      duration: 4,
+      serviceType: 'Medical Support',
+      status: 'confirmed',
+      location: '45 Temple Road, Kandy',
+      needs: 'Medication administration, vital signs monitoring',
+      hourlyRate: 1200,
+      notes: 'Medical support required',
+    },
+    {
+      caregiverId: caregivers[0].user._id,
+      careReceiverId: careReceivers[2].user._id,
+      date: yesterday,
+      startTime: '08:00',
+      endTime: '16:00',
+      duration: 8,
+      serviceType: 'Personal Care',
+      status: 'completed',
+      location: '78 Beach Road, Galle',
+      needs: 'Full day care, bathing assistance, companionship',
+      hourlyRate: 800,
+      notes: 'Completed successfully',
+      completionDate: yesterday,
+    },
+    {
+      caregiverId: caregivers[1].user._id,
+      careReceiverId: careReceivers[3].user._id,
+      date: now,
+      startTime: '14:00',
+      endTime: '18:00',
+      duration: 4,
+      serviceType: 'Companionship',
+      status: 'confirmed',
+      location: '90 Station Road, Negombo',
+      needs: 'Conversation, light activities, emotional support',
+      hourlyRate: 600,
+      notes: 'Afternoon companionship',
+    },
+    {
+      caregiverId: caregivers[1].user._id,
+      careReceiverId: careReceivers[0].user._id,
+      date: nextWeek,
+      startTime: '09:00',
+      endTime: '13:00',
+      duration: 4,
+      serviceType: 'Personal Care',
+      status: 'pending',
+      location: '123 Galle Road, Colombo 5',
+      needs: 'Morning care routine, breakfast assistance',
+      hourlyRate: 800,
+      notes: 'Pending confirmation',
+    },
+  ];
+
+  for (const booking of bookings) {
+    await Booking.create(booking);
+  }
+
+  console.log(`✓ Created ${bookings.length} bookings`);
+  return await Booking.find({});
+};
+
+// Create booking requests
+const createBookingRequests = async (caregivers, careReceivers) => {
+  console.log('\n📝 Creating booking requests...');
+  
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const nextWeek = new Date();
+  nextWeek.setDate(nextWeek.getDate() + 7);
+  
+  const requests = [
+    {
+      caregiverId: caregivers[0].user._id,
+      careReceiverId: careReceivers[1].user._id,
+      requestedDate: tomorrow,
+      startTime: '10:00',
+      endTime: '14:00',
+      serviceType: 'Medical Support',
+      status: 'pending',
+      location: '45 Temple Road, Kandy',
+      specialNeeds: 'Diabetes management experience required',
+      hourlyRate: 1200,
+    },
+    {
+      caregiverId: caregivers[1].user._id,
+      careReceiverId: careReceivers[2].user._id,
+      requestedDate: nextWeek,
+      startTime: '09:00',
+      endTime: '17:00',
+      serviceType: 'Personal Care',
+      status: 'pending',
+      location: '78 Beach Road, Galle',
+      specialNeeds: 'Full day care with meal preparation',
+      hourlyRate: 800,
+    },
+  ];
+
+  for (const request of requests) {
+    await BookingRequest.create(request);
+  }
+
+  console.log(`✓ Created ${requests.length} booking requests`);
+};
+
+// Create care documentation
+const createCareDocumentation = async (bookings, caregivers, careReceivers) => {
+  console.log('\n📋 Creating care documentation...');
+  
+  const completedBookings = bookings.filter(b => b.status === 'completed');
+  const docs = [];
+  
+  for (const booking of completedBookings) {
+    const doc = {
+      bookingId: booking._id,
+      caregiverId: booking.caregiverId,
+      careReceiverId: booking.careReceiverId,
+      servicesProvided: ['Medication Administration', 'Vital Signs Monitoring', 'Personal Hygiene', 'Meal Preparation'],
+      vitalSigns: {
+        bloodPressure: '120/80',
+        temperature: '98.6°F',
+        heartRate: '72 bpm',
+        oxygenLevel: '98%',
+      },
+      medicationAdministered: [
+        'Aspirin 100mg at 09:00 - Taken with food',
+        'Metformin 500mg at 12:00 - Blood sugar normal',
+      ],
+      mealsProvided: [
+        'Breakfast: Rice porridge and tea at 08:30',
+        'Lunch: Rice with fish curry and vegetables at 12:30',
+      ],
+      activitiesPerformed: [
+        'Morning walk for 30 minutes - Good mobility',
+        'Reading newspaper for 1 hour',
+      ],
+      behavioralObservations: 'Patient was cooperative and in good spirits. No signs of distress.',
+      incidents: 'None',
+      notes: 'Overall good day. Patient comfortable and content.',
+      todoList: [
+        {
+          text: 'Schedule follow-up appointment',
+          completed: false,
+          priority: 'high',
+        },
+        {
+          text: 'Refill medication next week',
+          completed: false,
+          priority: 'medium',
+        },
+        {
+          text: 'Update family on progress',
+          completed: true,
+          priority: 'low',
+        },
+      ],
+    };
+    
+    await CareDocumentation.create(doc);
+    docs.push(doc);
+  }
+
+  console.log(`✓ Created ${docs.length} care documentation records`);
+};
+
 // Main population function
 const populateDatabase = async () => {
   try {
@@ -917,6 +1120,9 @@ const populateDatabase = async () => {
     const careReceivers = await createCareReceivers();
     await createFeedback(caregivers, careReceivers);
     await createPayments(caregivers, careReceivers);
+    const bookings = await createBookings(caregivers, careReceivers);
+    await createBookingRequests(caregivers, careReceivers);
+    await createCareDocumentation(bookings, caregivers, careReceivers);
 
     console.log('\n' + '=' .repeat(60));
     console.log('\n✅ Database population completed successfully!\n');
@@ -927,16 +1133,22 @@ const populateDatabase = async () => {
     const careReceiverCount = await CareReceiver.countDocuments();
     const feedbackCount = await Feedback.countDocuments();
     const paymentCount = await Payment.countDocuments();
+    const bookingCount = await Booking.countDocuments();
+    const bookingRequestCount = await BookingRequest.countDocuments();
+    const careDocCount = await CareDocumentation.countDocuments();
     
     console.log('📈 Summary:');
     console.log(`   - Users: ${userCount}`);
     console.log(`   - Caregivers: ${caregiverCount}`);
     console.log(`   - Care Receivers: ${careReceiverCount}`);
+    console.log(`   - Bookings: ${bookingCount}`);
+    console.log(`   - Booking Requests: ${bookingRequestCount}`);
+    console.log(`   - Care Documentation: ${careDocCount}`);
     console.log(`   - Feedback Entries: ${feedbackCount}`);
     console.log(`   - Payment Records: ${paymentCount}`);
-    console.log('\n🔐 Admin Credentials:');
-    console.log('   Email: admin@elderease.lk');
-    console.log('   Password: admin123');
+    console.log('\n🔐 Login Credentials:');
+    console.log('   Admin: admin@elderease.lk / admin123');
+    console.log('   Caregiver: nimal.perera@elderease.lk / password123');
     console.log('');
   } catch (error) {
     console.error('❌ Error populating database:', error);

@@ -14,11 +14,14 @@ router.post('/image', protect, upload.single('image'), (req, res) => {
       });
     }
 
+    // Cloudinary provides the file path in req.file.path
+    const imageUrl = req.file.path || req.file.filename;
+
     res.json({
       success: true,
       message: 'Image uploaded successfully',
       data: {
-        url: req.file.path,
+        url: imageUrl,
         publicId: req.file.filename,
       },
     });
