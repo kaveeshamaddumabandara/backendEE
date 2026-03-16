@@ -1,11 +1,11 @@
 const sendEmail = require('../utils/sendEmail');
 
 // @desc    Submit contact form
-// @route   POST /api/contact
+// @route   POST /api/contact/send
 // @access  Public
 exports.submitContactForm = async (req, res) => {
   try {
-    const { name, email, subject, message } = req.body;
+    const { name, email, phone, subject, message } = req.body;
 
     // Validation
     if (!name || !email || !subject || !message) {
@@ -48,7 +48,7 @@ exports.submitContactForm = async (req, res) => {
               box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             }
             .header {
-              background-color: #8b5cf6;
+              background-color: #205404ff;
               color: white;
               padding: 20px;
               border-radius: 10px 10px 0 0;
@@ -70,8 +70,8 @@ exports.submitContactForm = async (req, res) => {
               border-radius: 5px;
             }
             .message-box {
-              background-color: #fef3c7;
-              border-left: 4px solid #f59e0b;
+              background-color: #ecfdf5;
+              border-left: 4px solid #10b981;
               padding: 15px;
               margin-top: 20px;
             }
@@ -96,8 +96,14 @@ exports.submitContactForm = async (req, res) => {
                 </div>
                 <div class="field">
                   <div class="label">Email</div>
-                  <div class="value">${email}</div>
+                  <div class="value"><a href="mailto:${email}" style="color: #10b981;">${email}</a></div>
                 </div>
+                ${phone ? `
+                <div class="field">
+                  <div class="label">Phone</div>
+                  <div class="value">${phone}</div>
+                </div>
+                ` : ''}
                 <div class="field">
                   <div class="label">Subject</div>
                   <div class="value">${subject}</div>
@@ -141,7 +147,7 @@ exports.submitContactForm = async (req, res) => {
               box-shadow: 0 2px 4px rgba(0,0,0,0.1);
             }
             .header {
-              background-color: #8b5cf6;
+              background-color: #10b981;
               color: white;
               padding: 20px;
               border-radius: 10px 10px 0 0;
@@ -185,13 +191,13 @@ exports.submitContactForm = async (req, res) => {
                   <p><strong>Subject:</strong> ${subject}</p>
                   <p><strong>Submitted:</strong> ${new Date().toLocaleString()}</p>
                 </div>
-                <p style="margin-top: 30px;">If you have any urgent concerns, please call us at <strong>+94 11 234 5678</strong></p>
+                <p style="margin-top: 30px;">If you have any urgent concerns, please call us at <strong>+94766317671</strong></p>
               </div>
               <div class="footer">
                 <p>Best regards,<br>The ElderEase Team</p>
                 <p style="margin-top: 20px;">
-                  <a href="mailto:support@elderease.com" style="color: #8b5cf6;">support@elderease.com</a> | 
-                  +94 11 234 5678
+                  <a href="mailto:kaveeshamadduma@gmail.com" style="color: #10b981;">kaveeshamadduma@gmail.com</a> | 
+                  +94766317671
                 </p>
               </div>
             </div>
@@ -200,12 +206,13 @@ exports.submitContactForm = async (req, res) => {
       </html>
     `;
 
-    // Send email to admin
-    const adminEmail = process.env.ADMIN_EMAIL || process.env.EMAIL_USER || 'support@elderease.com';
+    // Send email to admin (renujajanith@gmail.com)
+    const adminEmail = 'renujajanith@gmail.com';
     await sendEmail({
       email: adminEmail,
-      subject: `New Contact Form: ${subject}`,
+      subject: `ElderEase Contact Form: ${subject}`,
       html: adminEmailHTML,
+      replyTo: email, // Allow admin to reply directly to user
     });
 
     // Send confirmation email to user

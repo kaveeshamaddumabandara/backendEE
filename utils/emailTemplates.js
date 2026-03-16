@@ -21,7 +21,7 @@ const getPasswordResetEmailTemplate = (resetUrl, userName) => {
       <body>
         <div class="container">
           <div class="header">
-            <h1>🛡️ Password Reset Request</h1>
+            <h1>Password Reset Request</h1>
           </div>
           
           <div class="content">
@@ -39,7 +39,7 @@ const getPasswordResetEmailTemplate = (resetUrl, userName) => {
             <div class="code-box">${resetUrl}</div>
             
             <div class="warning">
-              <strong>⚠️ Important Security Information:</strong>
+              <strong>Important Security Information:</strong>
               <ul style="margin: 10px 0;">
                 <li>This link will expire in <strong>10 minutes</strong></li>
                 <li>This link can only be used once</li>

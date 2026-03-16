@@ -20,6 +20,7 @@ const sendEmail = async (options) => {
       subject: options.subject,
       html: options.html,
       text: options.text,
+      replyTo: options.replyTo || process.env.EMAIL_USER, // Add replyTo support
     };
 
     // Send email
