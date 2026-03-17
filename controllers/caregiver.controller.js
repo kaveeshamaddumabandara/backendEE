@@ -255,7 +255,7 @@ exports.getRecentFeedback = async (req, res) => {
       const mockFeedback = [
         {
           id: '1',
-          client: 'Sarah Johnson',
+          client: 'Dushan Silva',
           rating: 5,
           comment: 'Excellent care and very professional. Always on time and attentive to my needs.',
           date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', {
@@ -266,7 +266,7 @@ exports.getRecentFeedback = async (req, res) => {
         },
         {
           id: '2',
-          client: 'Michael Brown',
+          client: 'Shenuka Navod',
           rating: 5,
           comment: 'Wonderful experience! Very caring and patient with my elderly mother.',
           date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', {
@@ -277,7 +277,7 @@ exports.getRecentFeedback = async (req, res) => {
         },
         {
           id: '3',
-          client: 'Emily Davis',
+          client: 'Shamika Sageeth',
           rating: 4,
           comment: 'Good service overall. Would recommend to others.',
           date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', {
@@ -288,7 +288,7 @@ exports.getRecentFeedback = async (req, res) => {
         },
         {
           id: '4',
-          client: 'James Wilson',
+          client: 'Kamal Priyankara',
           rating: 5,
           comment: 'Outstanding care! Very knowledgeable and compassionate.',
           date: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', {
@@ -299,7 +299,7 @@ exports.getRecentFeedback = async (req, res) => {
         },
         {
           id: '5',
-          client: 'Patricia Miller',
+          client: 'Sunimal De Silva',
           rating: 5,
           comment: 'Highly professional and trustworthy. We feel very comfortable.',
           date: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', {

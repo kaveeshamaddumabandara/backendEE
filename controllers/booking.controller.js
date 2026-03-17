@@ -2,6 +2,38 @@ const Booking = require('../models/Booking.model');
 const User = require('../models/User.model');
 const Caregiver = require('../models/Caregiver.model');
 
+// Get all bookings for care receiver
+exports.getCareReceiverBookings = async (req, res) => {
+  try {
+    const careReceiverId = req.user._id;
+    const { status } = req.query;
+
+    const filter = { careReceiverId };
+    if (status) {
+      filter.status = status;
+    }
+
+    const bookings = await Booking.find(filter)
+      .populate('caregiverId', 'name email phone phoneNumber profileImage')
+      .sort({ date: -1, startTime: 1 });
+
+    console.log(`Found ${bookings.length} bookings for care receiver ${careReceiverId}`);
+
+    res.status(200).json({
+      success: true,
+      count: bookings.length,
+      data: bookings,
+    });
+  } catch (error) {
+    console.error('Error fetching care receiver bookings:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching bookings',
+      error: error.message,
+    });
+  }
+};
+
 // Get all bookings for caregiver (upcoming and completed)
 exports.getCaregiverBookings = async (req, res) => {
   try {

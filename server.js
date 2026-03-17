@@ -75,6 +75,7 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/caregiver', bookingRequestRoutes);
 app.use('/api/caregiver', bookingRoutes);
+app.use('/api/carereceiver', bookingRoutes);
 app.use('/api/care-documentation', careDocumentationRoutes);
 app.use('/api/caregiver/payment', caregiverPaymentRoutes);
 app.use('/api/contact', contactRoutes);
