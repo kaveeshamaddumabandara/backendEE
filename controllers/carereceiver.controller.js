@@ -337,8 +337,8 @@ exports.getAvailableCaregivers = async (req, res) => {
   try {
     const Caregiver = require('../models/Caregiver.model');
     
-    // Get all active caregivers with their user details
-    const caregivers = await Caregiver.find({ isActive: true })
+    // Get all caregivers with their user details
+    const caregivers = await Caregiver.find({})
       .populate({
         path: 'userId',
         select: 'name email phone profileImage address',
@@ -359,7 +359,8 @@ exports.getAvailableCaregivers = async (req, res) => {
       languages: caregiver.languages,
       hourlyRate: caregiver.hourlyRate,
       rating: caregiver.rating,
-      availability: caregiver.available,
+      availability: caregiver.status === 'available',
+      status: caregiver.status,
       hasTransportation: caregiver.hasTransportation,
       bio: caregiver.bio,
       role: 'caregiver',
