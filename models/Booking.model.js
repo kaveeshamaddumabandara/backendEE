@@ -54,6 +54,11 @@ const bookingSchema = new mongoose.Schema(
       type: Number,
       required: [true, 'Hourly rate is required'],
     },
+    totalAmount: {
+      type: Number,
+      required: [true, 'Total amount is required'],
+      min: [0, 'Total amount cannot be negative'],
+    },
     status: {
       type: String,
       enum: ['pending', 'confirmed', 'completed', 'cancelled'],
