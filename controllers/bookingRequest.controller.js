@@ -1,6 +1,7 @@
 const BookingRequest = require('../models/BookingRequest.model');
 const Booking = require('../models/Booking.model');
 const User = require('../models/User.model');
+const Caregiver = require('../models/Caregiver.model');
 
 // @desc    Get all pending requests for a caregiver
 // @route   GET /api/caregiver/pending-requests
@@ -66,9 +67,11 @@ exports.approveRequest = async (req, res) => {
       date: request.requestedDate,
       startTime: request.startTime,
       endTime: request.endTime,
+      duration: Number(request.duration) > 0 ? Number(request.duration) : 1,
       location: request.location,
       needs: request.specialNeeds,
       hourlyRate: request.hourlyRate,
+      totalAmount: request.totalAmount,
       status: 'confirmed',
     });
 
@@ -189,6 +192,7 @@ exports.createBookingRequest = async (req, res) => {
       requestedDate,
       startTime,
       endTime,
+      duration,
       location,
       specialNeeds,
       hourlyRate,
@@ -196,26 +200,56 @@ exports.createBookingRequest = async (req, res) => {
 
     const careReceiverId = req.user._id;
 
-    // Validate caregiver exists
-    const caregiver = await User.findOne({ _id: caregiverId, role: 'caregiver' });
-    if (!caregiver) {
+    // Validate caregiver exists (supports both User._id and Caregiver._id from mobile list)
+    let caregiverUser = await User.findOne({ _id: caregiverId, role: 'caregiver' });
+    let caregiverUserId = caregiverId;
+
+    if (!caregiverUser) {
+      const caregiverProfile = await Caregiver.findById(caregiverId).populate('userId', '_id role');
+      if (caregiverProfile?.userId?._id) {
+        caregiverUserId = caregiverProfile.userId._id;
+        caregiverUser = await User.findOne({ _id: caregiverUserId, role: 'caregiver' });
+      }
+    }
+
+    if (!caregiverUser) {
       return res.status(404).json({
         success: false,
         message: 'Caregiver not found',
       });
     }
 
+    const normalizedDuration = Number(duration) > 0 ? Number(duration) : 1;
+    const normalizedHourlyRate = Number(hourlyRate);
+    const computedTotalAmount = Number((normalizedHourlyRate * normalizedDuration).toFixed(2));
+
+    if (Number.isNaN(normalizedHourlyRate) || normalizedHourlyRate < 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Hourly rate must be a non-negative number',
+      });
+    }
+
+    if (Number.isNaN(computedTotalAmount) || computedTotalAmount < 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Unable to calculate total amount for booking request',
+      });
+    }
+
     // Create booking request
     const bookingRequest = await BookingRequest.create({
-      caregiverId,
+      caregiverId: caregiverUserId,
       careReceiverId,
       serviceType,
       requestedDate,
       startTime,
       endTime,
+      duration: normalizedDuration,
       location,
       specialNeeds: specialNeeds || '',
-      hourlyRate,
+      hourlyRate: normalizedHourlyRate,
+      totalAmount: computedTotalAmount,
       status: 'pending',
     });
 

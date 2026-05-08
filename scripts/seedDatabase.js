@@ -935,6 +935,7 @@ const createBookings = async (caregivers, careReceivers) => {
       location: '123 Galle Road, Colombo 5',
       needs: 'Daily care, medication reminders, meal preparation',
       hourlyRate: 800,
+      totalAmount: 6400,
       notes: 'Regular full day care',
     },
     {
@@ -949,6 +950,7 @@ const createBookings = async (caregivers, careReceivers) => {
       location: '45 Temple Road, Kandy',
       needs: 'Medication administration, vital signs monitoring',
       hourlyRate: 1200,
+      totalAmount: 4800,
       notes: 'Medical support required',
     },
     {
@@ -963,6 +965,7 @@ const createBookings = async (caregivers, careReceivers) => {
       location: '78 Beach Road, Galle',
       needs: 'Full day care, bathing assistance, companionship',
       hourlyRate: 800,
+      totalAmount: 6400,
       notes: 'Completed successfully',
       completionDate: yesterday,
     },
@@ -978,6 +981,7 @@ const createBookings = async (caregivers, careReceivers) => {
       location: '90 Station Road, Negombo',
       needs: 'Conversation, light activities, emotional support',
       hourlyRate: 600,
+      totalAmount: 2400,
       notes: 'Afternoon companionship',
     },
     {
@@ -992,6 +996,7 @@ const createBookings = async (caregivers, careReceivers) => {
       location: '123 Galle Road, Colombo 5',
       needs: 'Morning care routine, breakfast assistance',
       hourlyRate: 800,
+      totalAmount: 3200,
       notes: 'Pending confirmation',
     },
   ];
@@ -1025,6 +1030,8 @@ const createBookingRequests = async (caregivers, careReceivers) => {
       location: '45 Temple Road, Kandy',
       specialNeeds: 'Diabetes management experience required',
       hourlyRate: 1200,
+      duration: 4,
+      totalAmount: 4800,
     },
     {
       caregiverId: caregivers[1].user._id,
@@ -1037,6 +1044,8 @@ const createBookingRequests = async (caregivers, careReceivers) => {
       location: '78 Beach Road, Galle',
       specialNeeds: 'Full day care with meal preparation',
       hourlyRate: 800,
+      duration: 8,
+      totalAmount: 6400,
     },
   ];
 

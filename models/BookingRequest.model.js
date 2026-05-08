@@ -28,6 +28,11 @@ const bookingRequestSchema = new mongoose.Schema({
     type: String,
     required: [true, 'End time is required'],
   },
+  duration: {
+    type: Number,
+    min: [1, 'Duration must be at least 1 hour'],
+    default: 1,
+  },
   location: {
     type: String,
     required: [true, 'Location is required'],
@@ -39,6 +44,11 @@ const bookingRequestSchema = new mongoose.Schema({
   hourlyRate: {
     type: Number,
     required: [true, 'Hourly rate is required'],
+  },
+  totalAmount: {
+    type: Number,
+    required: [true, 'Total amount is required'],
+    min: [0, 'Total amount cannot be negative'],
   },
   status: {
     type: String,

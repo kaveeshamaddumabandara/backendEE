@@ -205,18 +205,71 @@ exports.createBooking = async (req, res) => {
       date,
       startTime,
       endTime,
+      time,
+      duration,
       location,
       needs,
+      notes,
       hourlyRate,
     } = req.body;
 
-    // Verify caregiver exists
-    const caregiver = await User.findOne({
+    const normalizedServiceTypeMap = {
+      'General Care': 'Personal Care',
+      'Medical Care': 'Medical Support',
+      Companionship: 'Companionship',
+      'Personal Care': 'Personal Care',
+    };
+
+    const normalizedServiceType = normalizedServiceTypeMap[serviceType] || serviceType;
+    const normalizedStartTime = startTime || time;
+    const normalizedEndTime = endTime || normalizedStartTime;
+    const normalizedDuration = Number(duration) > 0 ? Number(duration) : 1;
+    const normalizedHourlyRate = Number(hourlyRate);
+    const computedTotalAmount = Number((normalizedHourlyRate * normalizedDuration).toFixed(2));
+    const normalizedNeeds = (typeof needs === 'string' && needs.trim())
+      ? needs.trim()
+      : (typeof notes === 'string' ? notes.trim() : '');
+
+    if (!caregiverId || !normalizedServiceType || !date || !normalizedStartTime || !normalizedEndTime || !location || Number.isNaN(normalizedHourlyRate)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields for booking creation',
+      });
+    }
+
+    if (normalizedHourlyRate < 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Hourly rate must be a non-negative number',
+      });
+    }
+
+    if (Number.isNaN(computedTotalAmount) || computedTotalAmount < 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Unable to calculate total amount for booking',
+      });
+    }
+
+    // Verify caregiver exists (supports both User._id and Caregiver._id from mobile list)
+    let caregiverUser = await User.findOne({
       _id: caregiverId,
       role: 'caregiver',
     });
 
-    if (!caregiver) {
+    let caregiverUserId = caregiverId;
+    if (!caregiverUser) {
+      const caregiverProfile = await Caregiver.findById(caregiverId).populate('userId', '_id role');
+      if (caregiverProfile?.userId?._id) {
+        caregiverUserId = caregiverProfile.userId._id;
+        caregiverUser = await User.findOne({
+          _id: caregiverUserId,
+          role: 'caregiver',
+        });
+      }
+    }
+
+    if (!caregiverUser) {
       return res.status(404).json({
         success: false,
         message: 'Caregiver not found',
@@ -224,15 +277,18 @@ exports.createBooking = async (req, res) => {
     }
 
     const booking = await Booking.create({
-      caregiverId,
+      caregiverId: caregiverUserId,
       careReceiverId,
-      serviceType,
+      serviceType: normalizedServiceType,
       date,
-      startTime,
-      endTime,
+      startTime: normalizedStartTime,
+      endTime: normalizedEndTime,
+      duration: normalizedDuration,
       location,
-      needs,
-      hourlyRate,
+      needs: normalizedNeeds,
+      notes: normalizedNeeds,
+      hourlyRate: normalizedHourlyRate,
+      totalAmount: computedTotalAmount,
       status: 'pending',
     });
 
@@ -241,7 +297,15 @@ exports.createBooking = async (req, res) => {
     res.status(201).json({
       success: true,
       message: 'Booking created successfully',
-      data: booking,
+      data: {
+        ...booking.toObject(),
+        totalAmount: booking.totalAmount,
+        computedFrom: {
+          hourlyRate: normalizedHourlyRate,
+          duration: normalizedDuration,
+          formula: `${normalizedHourlyRate} x ${normalizedDuration}`,
+        },
+      },
     });
   } catch (error) {
     console.error('Error creating booking:', error);
