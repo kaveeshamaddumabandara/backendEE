@@ -230,7 +230,7 @@ exports.getRecentFeedback = async (req, res) => {
 
     // Get feedback about this caregiver from Feedback model
     const feedbacks = await Feedback.find({
-      caregiverId: caregiver._id,
+      caregiverId: caregiver.userId,
     })
       .populate('careReceiverId', 'name')
       .populate('userId', 'name')
@@ -249,72 +249,6 @@ exports.getRecentFeedback = async (req, res) => {
         year: 'numeric',
       }),
     }));
-
-    // If no feedback exists, return mock data
-    if (formattedFeedback.length === 0) {
-      const mockFeedback = [
-        {
-          id: '1',
-          client: 'Dushan Silva',
-          rating: 5,
-          comment: 'Excellent care and very professional. Always on time and attentive to my needs.',
-          date: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric',
-          }),
-        },
-        {
-          id: '2',
-          client: 'Shenuka Navod',
-          rating: 5,
-          comment: 'Wonderful experience! Very caring and patient with my elderly mother.',
-          date: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric',
-          }),
-        },
-        {
-          id: '3',
-          client: 'Shamika Sageeth',
-          rating: 4,
-          comment: 'Good service overall. Would recommend to others.',
-          date: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric',
-          }),
-        },
-        {
-          id: '4',
-          client: 'Kamal Priyankara',
-          rating: 5,
-          comment: 'Outstanding care! Very knowledgeable and compassionate.',
-          date: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric',
-          }),
-        },
-        {
-          id: '5',
-          client: 'Sunimal De Silva',
-          rating: 5,
-          comment: 'Highly professional and trustworthy. We feel very comfortable.',
-          date: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric',
-          }),
-        },
-      ];
-      
-      return res.status(200).json({
-        status: 'success',
-        data: mockFeedback,
-      });
-    }
 
     res.status(200).json({
       status: 'success',

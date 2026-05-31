@@ -96,6 +96,11 @@ exports.register = async (req, res) => {
       });
     }
 
+    // Resolve emergency contact from flat or nested payload
+    const emergencyContactName = req.body.emergencyContactName || (emergencyContact && emergencyContact.name);
+    const emergencyContactPhone = req.body.emergencyContactPhone || (emergencyContact && emergencyContact.phone);
+    const emergencyContactRelationship = req.body.emergencyContactRelationship || (emergencyContact && emergencyContact.relationship);
+
     // Create user with address
     const userData = {
       name,
@@ -114,6 +119,14 @@ exports.register = async (req, res) => {
         city,
         state: district || state, // Use district for care receivers, state for caregivers
         zipCode,
+      };
+    }
+
+    if (emergencyContactName) {
+      userData.emergencyContact = {
+        name: emergencyContactName,
+        phone: emergencyContactPhone || '',
+        relationship: emergencyContactRelationship || '',
       };
     }
 
@@ -158,10 +171,6 @@ exports.register = async (req, res) => {
       };
       
       // Add emergency contact if provided (from flat structure or nested object)
-      const emergencyContactName = req.body.emergencyContactName || (emergencyContact && emergencyContact.name);
-      const emergencyContactPhone = req.body.emergencyContactPhone || (emergencyContact && emergencyContact.phone);
-      const emergencyContactRelationship = req.body.emergencyContactRelationship || (emergencyContact && emergencyContact.relationship);
-      
       if (emergencyContactName) {
         careReceiverData.emergencyContact = {
           name: emergencyContactName,
@@ -242,11 +251,12 @@ exports.register = async (req, res) => {
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
+    const normalizedEmail = String(email || '').trim().toLowerCase();
     
     console.log('Login attempt:', { email, password: password ? '***' : 'missing', body: req.body });
 
     // Check if email and password provided
-    if (!email || !password) {
+    if (!normalizedEmail || !password) {
       console.log('Missing credentials:', { email: !!email, password: !!password });
       return res.status(400).json({
         status: 'error',
@@ -255,7 +265,7 @@ exports.login = async (req, res) => {
     }
 
     // Find user and include password
-    const user = await User.findOne({ email }).select('+password');
+    const user = await User.findOne({ email: normalizedEmail }).select('+password');
 
     if (!user) {
       return res.status(401).json({
@@ -297,7 +307,7 @@ exports.login = async (req, res) => {
       isActive: user.isActive,
     };
 
-    console.log('Login successful for user:', email);
+    console.log('Login successful for user:', normalizedEmail);
 
     res.status(200).json({
       status: 'success',
