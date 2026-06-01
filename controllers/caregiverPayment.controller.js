@@ -1,6 +1,23 @@
 const Payment = require('../models/Payment.model');
 const Caregiver = require('../models/Caregiver.model');
 const User = require('../models/User.model');
+const Stripe = require('stripe');
+
+const REGISTRATION_FEE_LKR = 1000;
+
+let stripeClient;
+
+const getStripeClient = () => {
+  if (!process.env.STRIPE_SECRET_KEY) {
+    throw new Error('Stripe is not configured. Please set STRIPE_SECRET_KEY');
+  }
+
+  if (!stripeClient) {
+    stripeClient = new Stripe(process.env.STRIPE_SECRET_KEY);
+  }
+
+  return stripeClient;
+};
 
 // @desc    Get registration fee details
 // @route   GET /api/caregiver/payment/registration-fee
@@ -9,7 +26,6 @@ exports.getRegistrationFeeDetails = async (req, res) => {
   try {
     const caregiverId = req.user._id;
 
-    const user = await User.findById(caregiverId);
     const caregiver = await Caregiver.findOne({ userId: caregiverId });
 
     if (!caregiver) {
@@ -23,9 +39,8 @@ exports.getRegistrationFeeDetails = async (req, res) => {
       success: true,
       data: {
         registrationFeePaid: caregiver.registrationFeePaid,
-        registrationFeeAmount: caregiver.registrationFeeAmount,
-        approvalStatus: user.approvalStatus,
-        canMakePayment: user.approvalStatus === 'approved' && !caregiver.registrationFeePaid,
+        registrationFeeAmount: REGISTRATION_FEE_LKR,
+        canMakePayment: !caregiver.registrationFeePaid,
       },
     });
   } catch (error) {
@@ -41,22 +56,73 @@ exports.getRegistrationFeeDetails = async (req, res) => {
 // @desc    Process registration fee payment
 // @route   POST /api/caregiver/payment/registration-fee
 // @access  Private/Caregiver
+exports.createRegistrationFeePaymentIntent = async (req, res) => {
+  try {
+    const caregiverId = req.user._id;
+    const user = await User.findById(caregiverId);
+    const caregiver = await Caregiver.findOne({ userId: caregiverId });
+
+    if (!caregiver || !user) {
+      return res.status(404).json({
+        success: false,
+        message: 'Caregiver profile not found',
+      });
+    }
+
+    if (caregiver.registrationFeePaid) {
+      return res.status(400).json({
+        success: false,
+        message: 'Registration fee already paid',
+      });
+    }
+
+    const stripe = getStripeClient();
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: REGISTRATION_FEE_LKR * 100,
+      currency: 'lkr',
+      automatic_payment_methods: { enabled: true },
+      metadata: {
+        source: 'caregiver_registration_fee',
+        caregiverUserId: String(caregiverId),
+        caregiverName: String(user.name || ''),
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Registration fee payment intent created successfully',
+      data: {
+        paymentIntentId: paymentIntent.id,
+        clientSecret: paymentIntent.client_secret,
+        amount: REGISTRATION_FEE_LKR,
+      },
+    });
+  } catch (error) {
+    console.error('Error creating registration fee payment intent:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error creating registration payment intent',
+      error: error.message,
+    });
+  }
+};
+
 exports.processRegistrationFeePayment = async (req, res) => {
   try {
     const caregiverId = req.user._id;
-    const { paymentMethod, transactionReference } = req.body;
+    const { paymentIntentId } = req.body;
 
-    if (!paymentMethod) {
+    if (!paymentIntentId) {
       return res.status(400).json({
         success: false,
-        message: 'Payment method is required',
+        message: 'paymentIntentId is required',
       });
     }
 
     const user = await User.findById(caregiverId);
     const caregiver = await Caregiver.findOne({ userId: caregiverId });
 
-    if (!caregiver) {
+    if (!caregiver || !user) {
       return res.status(404).json({
         success: false,
         message: 'Caregiver profile not found',
@@ -71,44 +137,83 @@ exports.processRegistrationFeePayment = async (req, res) => {
       });
     }
 
-    // Check if approved
-    if (user.approvalStatus !== 'approved') {
+    const stripe = getStripeClient();
+    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+
+    if (!paymentIntent || paymentIntent.status !== 'succeeded') {
       return res.status(400).json({
         success: false,
-        message: 'Your account must be approved by admin before making payment',
+        message: 'Stripe payment is not completed',
       });
     }
 
-    // Generate transaction ID
-    const transactionId = transactionReference || Payment.generateTransactionId();
+    if (paymentIntent.metadata?.caregiverUserId !== String(caregiverId)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Payment does not belong to this caregiver',
+      });
+    }
+
+    const amountReceivedLkr = Number(((paymentIntent.amount_received || 0) / 100).toFixed(2));
+    if (Math.abs(amountReceivedLkr - REGISTRATION_FEE_LKR) > 0.01) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid registration fee amount received',
+      });
+    }
+
+    const existingPayment = await Payment.findOne({
+      transactionId: paymentIntent.id,
+      paymentType: 'registration_fee',
+      status: 'completed',
+    });
+
+    if (existingPayment) {
+      caregiver.registrationFeePaid = true;
+      caregiver.registrationFeeAmount = REGISTRATION_FEE_LKR;
+      caregiver.registrationFeePaymentId = existingPayment._id;
+      await caregiver.save();
+
+      return res.status(200).json({
+        success: true,
+        message: 'Registration fee payment already recorded',
+        data: {
+          payment: existingPayment,
+          caregiver,
+        },
+      });
+    }
 
     // Create payment record
     const payment = await Payment.create({
       userId: caregiverId,
       caregiverId: caregiver._id,
-      amount: caregiver.registrationFeeAmount,
+      amount: REGISTRATION_FEE_LKR,
       currency: 'LKR',
-      paymentMethod,
-      status: 'completed', // In production, this would be 'pending' until payment gateway confirms
-      transactionId,
-      description: 'Caregiver Registration Fee',
+      paymentMethod: 'Credit Card',
+      status: 'completed',
+      transactionId: paymentIntent.id,
+      description: `Registration fee for ${user.name}`,
       serviceType: 'Subscription',
       paymentType: 'registration_fee',
-      paidTo: 'admin',
+      paidTo: 'platform',
+      metadata: {
+        paymentGateway: 'stripe',
+        stripePaymentIntentId: paymentIntent.id,
+        feeType: 'registration_flat_fee',
+        feeAmount: String(REGISTRATION_FEE_LKR),
+      },
     });
 
     // Update caregiver status
     caregiver.registrationFeePaid = true;
+    caregiver.registrationFeeAmount = REGISTRATION_FEE_LKR;
     caregiver.registrationFeePaymentId = payment._id;
     await caregiver.save();
 
-    // Activate user account
-    user.isActive = true;
-    await user.save();
-
     res.status(200).json({
       success: true,
-      message: 'Registration fee payment processed successfully. Your account is now active!',
+      message: 'Registration fee payment processed successfully.',
       data: {
         payment,
         caregiver,
@@ -266,7 +371,7 @@ exports.getPaymentHistory = async (req, res) => {
 
     const payments = await Payment.find({
       userId: caregiverId,
-      paidTo: 'admin',
+      paidTo: { $in: ['admin', 'platform'] },
     })
       .sort({ createdAt: -1 })
       .limit(50);
@@ -296,7 +401,7 @@ exports.getPaymentAnalytics = async (req, res) => {
     // Get all payments
     const payments = await Payment.find({
       userId: caregiverId,
-      paidTo: 'admin',
+      paidTo: { $in: ['admin', 'platform'] },
       status: 'completed',
     }).sort({ createdAt: -1 });
 

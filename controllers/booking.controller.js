@@ -1,6 +1,185 @@
 const Booking = require('../models/Booking.model');
 const User = require('../models/User.model');
 const Caregiver = require('../models/Caregiver.model');
+const Payment = require('../models/Payment.model');
+const Feedback = require('../models/Feedback.model');
+const Stripe = require('stripe');
+const sendEmail = require('../utils/sendEmail');
+
+let stripeClient;
+
+const getStripeClient = () => {
+  if (!process.env.STRIPE_SECRET_KEY) {
+    throw new Error('Stripe is not configured. Please set STRIPE_SECRET_KEY');
+  }
+
+  if (!stripeClient) {
+    stripeClient = new Stripe(process.env.STRIPE_SECRET_KEY);
+  }
+
+  return stripeClient;
+};
+
+const normalizeBookingPayload = payload => {
+  const {
+    serviceType,
+    date,
+    startTime,
+    endTime,
+    time,
+    duration,
+    location,
+    needs,
+    notes,
+    hourlyRate,
+  } = payload;
+
+  const normalizedServiceTypeMap = {
+    'General Care': 'Personal Care',
+    'Medical Care': 'Medical Support',
+    Companionship: 'Companionship',
+    'Personal Care': 'Personal Care',
+  };
+
+  const normalizedServiceType = normalizedServiceTypeMap[serviceType] || serviceType;
+  const normalizedStartTime = startTime || time;
+  const normalizedEndTime = endTime || normalizedStartTime;
+  const normalizedDuration = Number(duration) > 0 ? Number(duration) : 1;
+  const normalizedHourlyRate = Number(hourlyRate);
+  const computedTotalAmount = Number((normalizedHourlyRate * normalizedDuration).toFixed(2));
+  const normalizedNeeds = (typeof needs === 'string' && needs.trim())
+    ? needs.trim()
+    : (typeof notes === 'string' ? notes.trim() : '');
+
+  return {
+    normalizedServiceType,
+    normalizedStartTime,
+    normalizedEndTime,
+    normalizedDuration,
+    normalizedHourlyRate,
+    computedTotalAmount,
+    normalizedNeeds,
+    date,
+    location,
+  };
+};
+
+const resolveCaregiverUser = async caregiverId => {
+  let caregiverUser = await User.findOne({
+    _id: caregiverId,
+    role: 'caregiver',
+  });
+
+  let caregiverUserId = caregiverId;
+  if (!caregiverUser) {
+    const caregiverProfile = await Caregiver.findById(caregiverId).populate('userId', '_id role');
+    if (caregiverProfile?.userId?._id) {
+      caregiverUserId = caregiverProfile.userId._id;
+      caregiverUser = await User.findOne({
+        _id: caregiverUserId,
+        role: 'caregiver',
+      });
+    }
+  }
+
+  return { caregiverUser, caregiverUserId };
+};
+
+// Create Stripe payment intent for booking advance payment
+exports.createBookingPaymentIntent = async (req, res) => {
+  try {
+    const careReceiverId = req.user._id;
+    const { caregiverId } = req.body;
+
+    const {
+      normalizedServiceType,
+      normalizedStartTime,
+      normalizedEndTime,
+      normalizedDuration,
+      normalizedHourlyRate,
+      computedTotalAmount,
+      normalizedNeeds,
+      date,
+      location,
+    } = normalizeBookingPayload(req.body);
+
+    if (!caregiverId || !normalizedServiceType || !date || !normalizedStartTime || !normalizedEndTime || !location || Number.isNaN(normalizedHourlyRate)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required fields for booking payment',
+      });
+    }
+
+    if (normalizedHourlyRate < 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Hourly rate must be a non-negative number',
+      });
+    }
+
+    if (Number.isNaN(computedTotalAmount) || computedTotalAmount < 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Unable to calculate total amount for booking',
+      });
+    }
+
+    const { caregiverUser, caregiverUserId } = await resolveCaregiverUser(caregiverId);
+
+    if (!caregiverUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'Caregiver not found',
+      });
+    }
+
+    const advanceAmount = Number((computedTotalAmount * 0.5).toFixed(2));
+    const remainingAmount = Number((computedTotalAmount - advanceAmount).toFixed(2));
+    const stripeAmount = Math.round(advanceAmount * 100);
+
+    const stripe = getStripeClient();
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: stripeAmount,
+      currency: 'lkr',
+      automatic_payment_methods: { enabled: true },
+      metadata: {
+        source: 'mobile_booking_advance',
+        careReceiverId: String(careReceiverId),
+        caregiverId: String(caregiverUserId),
+        serviceType: String(normalizedServiceType),
+        date: String(date),
+        startTime: String(normalizedStartTime),
+        endTime: String(normalizedEndTime),
+        duration: String(normalizedDuration),
+        location: String(location),
+        needs: String(normalizedNeeds || ''),
+        hourlyRate: String(normalizedHourlyRate),
+        totalAmount: String(computedTotalAmount),
+        advanceAmount: String(advanceAmount),
+        remainingAmount: String(remainingAmount),
+      },
+    });
+
+    res.status(200).json({
+      success: true,
+      message: 'Booking payment intent created successfully',
+      data: {
+        paymentIntentId: paymentIntent.id,
+        clientSecret: paymentIntent.client_secret,
+        totalAmount: computedTotalAmount,
+        advanceAmount,
+        remainingAmount,
+      },
+    });
+  } catch (error) {
+    console.error('Error creating booking payment intent:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error creating booking payment intent',
+      error: error.message,
+    });
+  }
+};
 
 // Get all bookings for care receiver
 exports.getCareReceiverBookings = async (req, res) => {
@@ -17,12 +196,28 @@ exports.getCareReceiverBookings = async (req, res) => {
       .populate('caregiverId', 'name email phone phoneNumber profileImage')
       .sort({ date: -1, startTime: 1 });
 
+    const bookingIds = bookings.map(booking => booking._id);
+    const reviewedBookingIds = await Feedback.find({
+      userId: careReceiverId,
+      bookingId: { $in: bookingIds },
+    }).distinct('bookingId');
+
+    const reviewedBookingIdSet = new Set(reviewedBookingIds.map(id => String(id)));
+    const enrichedBookings = bookings.map(booking => {
+      const hasReview = reviewedBookingIdSet.has(String(booking._id));
+      return {
+        ...booking.toObject(),
+        hasReview,
+        canReview: booking.status === 'completed' && !hasReview,
+      };
+    });
+
     console.log(`Found ${bookings.length} bookings for care receiver ${careReceiverId}`);
 
     res.status(200).json({
       success: true,
-      count: bookings.length,
-      data: bookings,
+      count: enrichedBookings.length,
+      data: enrichedBookings,
     });
   } catch (error) {
     console.error('Error fetching care receiver bookings:', error);
@@ -201,34 +396,20 @@ exports.createBooking = async (req, res) => {
     const careReceiverId = req.user._id;
     const {
       caregiverId,
-      serviceType,
-      date,
-      startTime,
-      endTime,
-      time,
-      duration,
-      location,
-      needs,
-      notes,
-      hourlyRate,
+      paymentIntentId,
     } = req.body;
 
-    const normalizedServiceTypeMap = {
-      'General Care': 'Personal Care',
-      'Medical Care': 'Medical Support',
-      Companionship: 'Companionship',
-      'Personal Care': 'Personal Care',
-    };
-
-    const normalizedServiceType = normalizedServiceTypeMap[serviceType] || serviceType;
-    const normalizedStartTime = startTime || time;
-    const normalizedEndTime = endTime || normalizedStartTime;
-    const normalizedDuration = Number(duration) > 0 ? Number(duration) : 1;
-    const normalizedHourlyRate = Number(hourlyRate);
-    const computedTotalAmount = Number((normalizedHourlyRate * normalizedDuration).toFixed(2));
-    const normalizedNeeds = (typeof needs === 'string' && needs.trim())
-      ? needs.trim()
-      : (typeof notes === 'string' ? notes.trim() : '');
+    const {
+      normalizedServiceType,
+      normalizedStartTime,
+      normalizedEndTime,
+      normalizedDuration,
+      normalizedHourlyRate,
+      computedTotalAmount,
+      normalizedNeeds,
+      date,
+      location,
+    } = normalizeBookingPayload(req.body);
 
     if (!caregiverId || !normalizedServiceType || !date || !normalizedStartTime || !normalizedEndTime || !location || Number.isNaN(normalizedHourlyRate)) {
       return res.status(400).json({
@@ -251,23 +432,14 @@ exports.createBooking = async (req, res) => {
       });
     }
 
-    // Verify caregiver exists (supports both User._id and Caregiver._id from mobile list)
-    let caregiverUser = await User.findOne({
-      _id: caregiverId,
-      role: 'caregiver',
-    });
-
-    let caregiverUserId = caregiverId;
-    if (!caregiverUser) {
-      const caregiverProfile = await Caregiver.findById(caregiverId).populate('userId', '_id role');
-      if (caregiverProfile?.userId?._id) {
-        caregiverUserId = caregiverProfile.userId._id;
-        caregiverUser = await User.findOne({
-          _id: caregiverUserId,
-          role: 'caregiver',
-        });
-      }
+    if (!paymentIntentId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Advance payment is required before booking confirmation',
+      });
     }
+
+    const { caregiverUser, caregiverUserId } = await resolveCaregiverUser(caregiverId);
 
     if (!caregiverUser) {
       return res.status(404).json({
@@ -275,6 +447,54 @@ exports.createBooking = async (req, res) => {
         message: 'Caregiver not found',
       });
     }
+
+    const existingPayment = await Payment.findOne({
+      userId: careReceiverId,
+      transactionId: paymentIntentId,
+      status: 'completed',
+      paymentType: 'service_payment',
+    });
+
+    if (existingPayment) {
+      const existingBooking = existingPayment.bookingId
+        ? await Booking.findById(existingPayment.bookingId)
+        : null;
+
+      return res.status(200).json({
+        success: true,
+        message: 'Booking was already created for this payment',
+        data: existingBooking || null,
+      });
+    }
+
+    const stripe = getStripeClient();
+    const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+
+    if (!paymentIntent || paymentIntent.status !== 'succeeded') {
+      return res.status(400).json({
+        success: false,
+        message: 'Advance payment is not completed',
+      });
+    }
+
+    if (paymentIntent.metadata?.careReceiverId !== String(careReceiverId)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Payment does not belong to the logged-in user',
+      });
+    }
+
+    const expectedAdvanceAmount = Number((computedTotalAmount * 0.5).toFixed(2));
+    const receivedAdvanceAmount = Number(((paymentIntent.amount_received || 0) / 100).toFixed(2));
+
+    if (Math.abs(receivedAdvanceAmount - expectedAdvanceAmount) > 0.01) {
+      return res.status(400).json({
+        success: false,
+        message: 'Payment amount mismatch with booking advance amount',
+      });
+    }
+
+    const remainingAmount = Number((computedTotalAmount - expectedAdvanceAmount).toFixed(2));
 
     const booking = await Booking.create({
       caregiverId: caregiverUserId,
@@ -289,7 +509,36 @@ exports.createBooking = async (req, res) => {
       notes: normalizedNeeds,
       hourlyRate: normalizedHourlyRate,
       totalAmount: computedTotalAmount,
+      advanceAmount: expectedAdvanceAmount,
+      remainingAmount,
+      advancePaymentStatus: 'completed',
+      remainingPaymentStatus: 'pending_physical',
+      advancePaymentIntentId: paymentIntent.id,
+      advancePaidAt: new Date(),
       status: 'pending',
+    });
+
+    await Payment.create({
+      userId: careReceiverId,
+      amount: expectedAdvanceAmount,
+      currency: 'LKR',
+      paymentMethod: 'Credit Card',
+      status: 'completed',
+      transactionId: paymentIntent.id,
+      description: `Booking advance payment (50%) - ${normalizedServiceType}`,
+      serviceType: 'Hourly Care',
+      paymentType: 'service_payment',
+      paidTo: 'platform',
+      bookingCount: 1,
+      bookingId: booking._id,
+      metadata: {
+        paymentGateway: 'stripe',
+        paymentPhase: 'advance_50',
+        caregiverUserId: String(caregiverUserId),
+        bookingId: String(booking._id),
+        totalAmount: String(computedTotalAmount),
+        remainingAmount: String(remainingAmount),
+      },
     });
 
     // TODO: Send notification to caregiver about new booking
@@ -355,9 +604,40 @@ exports.completeBooking = async (req, res) => {
       await caregiver.save();
     }
 
+    const [careReceiverUser, caregiverUser] = await Promise.all([
+      User.findById(booking.careReceiverId).select('name email'),
+      User.findById(caregiverId).select('name'),
+    ]);
+
+    if (careReceiverUser?.email) {
+      const completionDateText = booking.completionDate
+        ? new Date(booking.completionDate).toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+          })
+        : new Date().toLocaleDateString('en-US');
+
+      await sendEmail({
+        email: careReceiverUser.email,
+        subject: 'Your CareConnect Booking is Completed',
+        html: `
+          <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111827;">
+            <h2 style="margin-bottom: 8px;">Booking Completed</h2>
+            <p>Hi ${careReceiverUser.name || 'there'},</p>
+            <p>Your booking for <strong>${booking.serviceType}</strong> has been marked as completed by caregiver <strong>${caregiverUser?.name || 'your caregiver'}</strong>.</p>
+            <p><strong>Completed on:</strong> ${completionDateText}</p>
+            <p>You can now open <strong>My Bookings</strong> in the app and submit your rating and review for this booking.</p>
+            <p>Thank you for using CareConnect.</p>
+          </div>
+        `,
+        text: `Hi ${careReceiverUser.name || 'there'}, your booking for ${booking.serviceType} has been marked as completed by ${caregiverUser?.name || 'your caregiver'}. You can now submit your review from My Bookings in the app.`,
+      });
+    }
+
     res.status(200).json({
       success: true,
-      message: 'Booking marked as completed',
+      message: 'Booking marked as completed. Care receiver notification sent.',
       data: booking,
     });
   } catch (error) {

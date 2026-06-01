@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const {
   getRegistrationFeeDetails,
+  createRegistrationFeePaymentIntent,
   processRegistrationFeePayment,
   getCommissionStatus,
   processCommissionPayment,
@@ -17,6 +18,7 @@ router.use(authorize('caregiver'));
 
 // Registration fee routes
 router.get('/registration-fee', getRegistrationFeeDetails);
+router.post('/registration-fee/payment-intent', createRegistrationFeePaymentIntent);
 router.post('/registration-fee', processRegistrationFeePayment);
 
 // Commission routes

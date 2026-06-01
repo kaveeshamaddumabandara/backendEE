@@ -59,6 +59,39 @@ const bookingSchema = new mongoose.Schema(
       required: [true, 'Total amount is required'],
       min: [0, 'Total amount cannot be negative'],
     },
+    advanceAmount: {
+      type: Number,
+      min: [0, 'Advance amount cannot be negative'],
+      default: function defaultAdvanceAmount() {
+        const total = Number(this.totalAmount || 0);
+        return Number((total * 0.5).toFixed(2));
+      },
+    },
+    remainingAmount: {
+      type: Number,
+      min: [0, 'Remaining amount cannot be negative'],
+      default: function defaultRemainingAmount() {
+        const total = Number(this.totalAmount || 0);
+        return Number((total * 0.5).toFixed(2));
+      },
+    },
+    advancePaymentStatus: {
+      type: String,
+      enum: ['pending', 'completed', 'failed'],
+      default: 'pending',
+    },
+    remainingPaymentStatus: {
+      type: String,
+      enum: ['pending_physical', 'completed_physical'],
+      default: 'pending_physical',
+    },
+    advancePaymentIntentId: {
+      type: String,
+      default: '',
+    },
+    advancePaidAt: {
+      type: Date,
+    },
     status: {
       type: String,
       enum: ['pending', 'confirmed', 'completed', 'cancelled'],

@@ -6,6 +6,9 @@ const CareReceiver = require('../models/CareReceiver.model');
 const sendEmail = require('../utils/sendEmail');
 const { getPasswordResetEmailTemplate } = require('../utils/emailTemplates');
 
+const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 // Password strength validation
 const validatePasswordStrength = (password) => {
   const errors = [];
@@ -76,6 +79,7 @@ exports.register = async (req, res) => {
       // Care receiver-specific fields
       emergencyContact
     } = req.body;
+    const normalizedEmail = normalizeEmail(email);
 
     // Validate password strength
     const passwordValidation = validatePasswordStrength(password);
@@ -88,7 +92,7 @@ exports.register = async (req, res) => {
     }
 
     // Check if user already exists
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({ email: normalizedEmail });
     if (existingUser) {
       return res.status(400).json({
         status: 'error',
@@ -104,7 +108,7 @@ exports.register = async (req, res) => {
     // Create user with address
     const userData = {
       name,
-      email,
+      email: normalizedEmail,
       password,
       role,
       phone,
@@ -130,7 +134,7 @@ exports.register = async (req, res) => {
       };
     }
 
-    console.log('Creating new user:', { email, role, name });
+    console.log('Creating new user:', { email: normalizedEmail, role, name });
 
     const user = await User.create(userData);
 
@@ -215,6 +219,12 @@ exports.register = async (req, res) => {
     const token = generateToken(user._id);
 
     // Prepare user response
+    let registrationFeePaid = false;
+    if (role === 'caregiver') {
+      const caregiverProfile = await Caregiver.findOne({ userId: user._id }).select('registrationFeePaid');
+      registrationFeePaid = caregiverProfile?.registrationFeePaid || false;
+    }
+
     const userResponse = {
       _id: user._id,
       id: user._id,
@@ -224,9 +234,10 @@ exports.register = async (req, res) => {
       phone: user.phone || '',
       profileImage: user.profileImage || '',
       isActive: user.isActive,
+      registrationFeePaid,
     };
 
-    console.log('User registered successfully:', email);
+    console.log('User registered successfully:', normalizedEmail);
 
     res.status(201).json({
       status: 'success',
@@ -251,7 +262,7 @@ exports.register = async (req, res) => {
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
-    const normalizedEmail = String(email || '').trim().toLowerCase();
+    const normalizedEmail = normalizeEmail(email);
     
     console.log('Login attempt:', { email, password: password ? '***' : 'missing', body: req.body });
 
@@ -265,13 +276,23 @@ exports.login = async (req, res) => {
     }
 
     // Find user and include password
-    const user = await User.findOne({ email: normalizedEmail }).select('+password');
+    let user = await User.findOne({ email: normalizedEmail }).select('+password');
+
+    if (!user && normalizedEmail) {
+      const emailRegex = new RegExp(`^${escapeRegExp(normalizedEmail)}$`, 'i');
+      user = await User.findOne({ email: emailRegex }).select('+password');
+    }
 
     if (!user) {
       return res.status(401).json({
         status: 'error',
         message: 'Invalid credentials',
       });
+    }
+
+    if (user.email !== normalizedEmail) {
+      user.email = normalizedEmail;
+      await user.save({ validateBeforeSave: false });
     }
 
     // Check if password matches
@@ -296,6 +317,12 @@ exports.login = async (req, res) => {
     const token = generateToken(user._id);
 
     // Prepare user response
+    let registrationFeePaid = false;
+    if (user.role === 'caregiver') {
+      const caregiverProfile = await Caregiver.findOne({ userId: user._id }).select('registrationFeePaid');
+      registrationFeePaid = caregiverProfile?.registrationFeePaid || false;
+    }
+
     const userResponse = {
       _id: user._id,
       id: user._id,
@@ -305,6 +332,7 @@ exports.login = async (req, res) => {
       phone: user.phone || '',
       profileImage: user.profileImage || '',
       isActive: user.isActive,
+      registrationFeePaid,
     };
 
     console.log('Login successful for user:', normalizedEmail);

@@ -192,6 +192,198 @@ exports.submitCaregiverReview = async (req, res) => {
   }
 };
 
+// Submit review for a specific booking
+exports.submitBookingReview = async (req, res) => {
+  try {
+    const { bookingId, rating, review, comment } = req.body;
+    const careReceiverId = req.user.id;
+    const normalizedReview = (review || comment || '').trim();
+
+    if (!bookingId || !rating || !normalizedReview) {
+      return res.status(400).json({
+        success: false,
+        message: 'bookingId, rating, and review are required',
+      });
+    }
+
+    if (rating < 1 || rating > 5) {
+      return res.status(400).json({
+        success: false,
+        message: 'Rating must be between 1 and 5',
+      });
+    }
+
+    const booking = await Booking.findOne({
+      _id: bookingId,
+      careReceiverId,
+    }).populate('caregiverId', 'name role isActive');
+
+    if (!booking) {
+      return res.status(404).json({
+        success: false,
+        message: 'Booking not found',
+      });
+    }
+
+    if (booking.status !== 'completed') {
+      return res.status(400).json({
+        success: false,
+        message: 'You can only review completed bookings',
+      });
+    }
+
+    if (!booking.caregiverId || booking.caregiverId.role !== 'caregiver') {
+      return res.status(400).json({
+        success: false,
+        message: 'Booking caregiver is invalid',
+      });
+    }
+
+    const existingFeedback = await Feedback.findOne({
+      bookingId,
+      userId: careReceiverId,
+    });
+
+    if (existingFeedback) {
+      return res.status(400).json({
+        success: false,
+        message: 'You already submitted a review for this booking',
+      });
+    }
+
+    const feedback = await Feedback.create({
+      userId: careReceiverId,
+      careReceiverId,
+      caregiverId: booking.caregiverId._id,
+      caregiverName: booking.caregiverId.name,
+      bookingId: booking._id,
+      rating,
+      comment: normalizedReview,
+      message: normalizedReview,
+      feedbackType: 'General',
+      category: 'Service Quality',
+      status: 'pending',
+    });
+
+    await updateCaregiverRating(booking.caregiverId._id);
+
+    await feedback.populate('userId', 'name email role');
+    await feedback.populate('caregiverId', 'name email');
+    await feedback.populate('careReceiverId', 'name email');
+    await feedback.populate('bookingId', 'date serviceType status');
+
+    return res.status(201).json({
+      success: true,
+      message: 'Booking review submitted successfully',
+      data: feedback,
+    });
+  } catch (error) {
+    console.error('Error submitting booking review:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to submit booking review',
+      error: error.message,
+    });
+  }
+};
+
+// Get booking review for the logged-in care receiver
+exports.getMyBookingReview = async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+    const careReceiverId = req.user.id;
+
+    const feedback = await Feedback.findOne({
+      bookingId,
+      userId: careReceiverId,
+      caregiverId: { $exists: true, $ne: null },
+    })
+      .populate('caregiverId', 'name email profileImage')
+      .populate('bookingId', 'date serviceType status');
+
+    if (!feedback) {
+      return res.status(404).json({
+        success: false,
+        message: 'No review found for this booking',
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: feedback,
+    });
+  } catch (error) {
+    console.error('Error fetching booking review:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch booking review',
+      error: error.message,
+    });
+  }
+};
+
+// Update booking review for the logged-in care receiver
+exports.updateMyBookingReview = async (req, res) => {
+  try {
+    const { bookingId } = req.params;
+    const { rating, review, comment } = req.body;
+    const careReceiverId = req.user.id;
+    const normalizedReview = (review || comment || '').trim();
+
+    if (!rating || !normalizedReview) {
+      return res.status(400).json({
+        success: false,
+        message: 'rating and review are required',
+      });
+    }
+
+    if (rating < 1 || rating > 5) {
+      return res.status(400).json({
+        success: false,
+        message: 'Rating must be between 1 and 5',
+      });
+    }
+
+    const feedback = await Feedback.findOne({
+      bookingId,
+      userId: careReceiverId,
+      caregiverId: { $exists: true, $ne: null },
+    });
+
+    if (!feedback) {
+      return res.status(404).json({
+        success: false,
+        message: 'No review found for this booking',
+      });
+    }
+
+    feedback.rating = rating;
+    feedback.comment = normalizedReview;
+    feedback.message = normalizedReview;
+    await feedback.save();
+
+    await updateCaregiverRating(feedback.caregiverId);
+
+    await feedback.populate('userId', 'name email role');
+    await feedback.populate('caregiverId', 'name email');
+    await feedback.populate('careReceiverId', 'name email');
+    await feedback.populate('bookingId', 'date serviceType status');
+
+    return res.status(200).json({
+      success: true,
+      message: 'Review updated successfully',
+      data: feedback,
+    });
+  } catch (error) {
+    console.error('Error updating booking review:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update booking review',
+      error: error.message,
+    });
+  }
+};
+
 // Get care receiver's caregiver reviews
 exports.getMyCaregiverReviews = async (req, res) => {
   try {

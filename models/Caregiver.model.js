@@ -83,7 +83,7 @@ const caregiverSchema = new mongoose.Schema({
   },
   registrationFeeAmount: {
     type: Number,
-    default: 1000, // LKR 1000
+    default: 1000,
   },
   registrationFeePaymentId: {
     type: mongoose.Schema.Types.ObjectId,
