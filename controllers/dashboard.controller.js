@@ -40,29 +40,55 @@ exports.getDashboardStats = async (req, res) => {
       ? Math.round(((newUsersThisMonth - newUsersLastMonth) / newUsersLastMonth) * 100)
       : 0;
 
-    // Get revenue data from payments
+    // Platform revenue = registration fees + caregiver booking flat fees only
+    const PLATFORM_TYPES = ['registration_fee', 'booking_commission'];
+
     const startOfMonth = new Date();
     startOfMonth.setDate(1);
     startOfMonth.setHours(0, 0, 0, 0);
-    
-    const paymentsThisMonth = await Payment.find({
-      createdAt: { $gte: startOfMonth },
-      status: 'completed'
-    });
-    
-    const revenueThisMonth = paymentsThisMonth.reduce((sum, payment) => sum + payment.amount, 0);
-    
+
+    const revenueAggThisMonth = await Payment.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: startOfMonth },
+          status: 'completed',
+          paymentType: { $in: PLATFORM_TYPES },
+        },
+      },
+      {
+        $group: {
+          _id: '$paymentType',
+          total: { $sum: '$amount' },
+        },
+      },
+    ]);
+
+    const registrationFeeRevenue = (revenueAggThisMonth.find(r => r._id === 'registration_fee') || {}).total || 0;
+    const flatFeeRevenue = (revenueAggThisMonth.find(r => r._id === 'booking_commission') || {}).total || 0;
+    const revenueThisMonth = registrationFeeRevenue + flatFeeRevenue;
+
     const startOfLastMonth = new Date();
     startOfLastMonth.setMonth(startOfLastMonth.getMonth() - 1);
     startOfLastMonth.setDate(1);
     startOfLastMonth.setHours(0, 0, 0, 0);
-    
-    const paymentsLastMonth = await Payment.find({
-      createdAt: { $gte: startOfLastMonth, $lt: startOfMonth },
-      status: 'completed'
-    });
-    
-    const revenueLastMonth = paymentsLastMonth.reduce((sum, payment) => sum + payment.amount, 0);
+
+    const [revenueLastMonthAgg] = await Payment.aggregate([
+      {
+        $match: {
+          createdAt: { $gte: startOfLastMonth, $lt: startOfMonth },
+          status: 'completed',
+          paymentType: { $in: PLATFORM_TYPES },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          total: { $sum: '$amount' },
+        },
+      },
+    ]);
+
+    const revenueLastMonth = revenueLastMonthAgg ? revenueLastMonthAgg.total : 0;
     const revenueGrowth = revenueLastMonth > 0
       ? Math.round(((revenueThisMonth - revenueLastMonth) / revenueLastMonth) * 100)
       : 0;
@@ -85,8 +111,10 @@ exports.getDashboardStats = async (req, res) => {
         activeCaregivers,
         userGrowthPercentage,
         appointmentsThisWeek,
-        appointmentGrowth: 15, // Sample growth
+        appointmentGrowth: 15,
         revenueThisMonth,
+        registrationFeeRevenue,
+        flatFeeRevenue,
         revenueGrowth,
       },
     });
@@ -283,6 +311,7 @@ exports.getPlatformActivity = async (req, res) => {
 // @access  Private/Admin
 exports.getRevenueTrends = async (req, res) => {
   try {
+    const PLATFORM_TYPES = ['registration_fee', 'booking_commission'];
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     const currentDate = new Date();
     const revenueData = [];
@@ -290,17 +319,31 @@ exports.getRevenueTrends = async (req, res) => {
     for (let i = 5; i >= 0; i--) {
       const monthStart = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
       const monthEnd = new Date(currentDate.getFullYear(), currentDate.getMonth() - i + 1, 1);
-      
-      const monthPayments = await Payment.find({
-        createdAt: { $gte: monthStart, $lt: monthEnd },
-        status: 'completed'
-      });
-      
-      const revenue = monthPayments.reduce((sum, payment) => sum + payment.amount, 0);
-      
+
+      const breakdown = await Payment.aggregate([
+        {
+          $match: {
+            createdAt: { $gte: monthStart, $lt: monthEnd },
+            status: 'completed',
+            paymentType: { $in: PLATFORM_TYPES },
+          },
+        },
+        {
+          $group: {
+            _id: '$paymentType',
+            total: { $sum: '$amount' },
+          },
+        },
+      ]);
+
+      const registrationFee = (breakdown.find(b => b._id === 'registration_fee') || {}).total || 0;
+      const flatFee = (breakdown.find(b => b._id === 'booking_commission') || {}).total || 0;
+
       revenueData.push({
         month: months[monthStart.getMonth()],
-        revenue,
+        revenue: registrationFee + flatFee,
+        registrationFee,
+        flatFee,
       });
     }
 

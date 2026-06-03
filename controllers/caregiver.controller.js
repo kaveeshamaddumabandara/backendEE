@@ -412,3 +412,57 @@ exports.updateStatus = async (req, res) => {
     });
   }
 };
+
+// @desc    Upload qualification proof documents for a caregiver
+// @route   POST /api/caregiver/documents
+// @access  Private/Caregiver
+exports.uploadDocuments = async (req, res) => {
+  try {
+    const caregiver = await Caregiver.findOne({ userId: req.user.id });
+    if (!caregiver) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Caregiver profile not found',
+      });
+    }
+
+    if (!req.files || Object.keys(req.files).length === 0) {
+      return res.status(400).json({
+        status: 'error',
+        message: 'No documents provided',
+      });
+    }
+
+    const updates = {};
+
+    if (req.files.idProof?.[0]) {
+      updates.idProof = req.files.idProof[0].path;
+    }
+    if (req.files.policeVerification?.[0]) {
+      updates.policeVerification = req.files.policeVerification[0].path;
+    }
+    if (req.files.medicalCertificate?.[0]) {
+      updates.medicalCertificate = req.files.medicalCertificate[0].path;
+    }
+    if (req.files.qualificationDocs && req.files.qualificationDocs.length > 0) {
+      updates.certifications = req.files.qualificationDocs.map(file => ({
+        name: file.originalname,
+        documentUrl: file.path,
+      }));
+    }
+
+    await Caregiver.findOneAndUpdate({ userId: req.user.id }, updates, { new: true });
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Documents uploaded successfully',
+      data: { uploadedCount: Object.values(req.files).flat().length },
+    });
+  } catch (error) {
+    console.error('Upload documents error:', error);
+    res.status(500).json({
+      status: 'error',
+      message: error.message || 'Error uploading documents',
+    });
+  }
+};

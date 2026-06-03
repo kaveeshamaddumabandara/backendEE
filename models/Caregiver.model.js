@@ -102,7 +102,7 @@ const caregiverSchema = new mongoose.Schema({
   },
   commissionRate: {
     type: Number,
-    default: 500, // LKR 500 per 20 bookings
+    default: 1000, // LKR 1,000 flat fee per 20 bookings
   },
   commissionPaymentHistory: [{
     paymentId: {
