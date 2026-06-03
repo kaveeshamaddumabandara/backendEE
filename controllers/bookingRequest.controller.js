@@ -40,6 +40,20 @@ exports.approveRequest = async (req, res) => {
     const { id } = req.params;
     const caregiverId = req.user._id;
 
+    // Block approval when the 20-booking flat fee is unpaid
+    const caregiver = await Caregiver.findOne({ userId: caregiverId });
+    if (caregiver) {
+      const bookingsSinceLastPayment =
+        caregiver.totalBookingsCompleted - (caregiver.lastCommissionPaymentBookingCount || 0);
+      if (bookingsSinceLastPayment >= 20) {
+        return res.status(403).json({
+          success: false,
+          message:
+            'You have an outstanding flat fee of LKR 1,000 due after completing 20 bookings. Please pay the fee from the Payments section before accepting new bookings.',
+        });
+      }
+    }
+
     // Find the request
     const request = await BookingRequest.findOne({
       _id: id,

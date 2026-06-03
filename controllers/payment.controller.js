@@ -317,7 +317,10 @@ exports.getPaymentStats = async (req, res) => {
       {
         $group: {
           _id: null,
-          totalRevenue: { $sum: '$amount' },
+          grossRevenue: { $sum: '$amount' },           // all statuses (for reference)
+          completedRevenue: {                           // completed transactions only
+            $sum: { $cond: [{ $eq: ['$status', 'completed'] }, '$amount', 0] }
+          },
           totalTransactions: { $sum: 1 },
           completedCount: {
             $sum: { $cond: [{ $eq: ['$status', 'completed'] }, 1, 0] }
@@ -327,9 +330,6 @@ exports.getPaymentStats = async (req, res) => {
           },
           failedCount: {
             $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] }
-          },
-          completedRevenue: {
-            $sum: { $cond: [{ $eq: ['$status', 'completed'] }, '$amount', 0] }
           }
         }
       }
@@ -387,12 +387,12 @@ exports.getPaymentStats = async (req, res) => {
       success: true,
       data: {
         overview: stats[0] || {
-          totalRevenue: 0,
+          grossRevenue: 0,
+          completedRevenue: 0,
           totalTransactions: 0,
           completedCount: 0,
           pendingCount: 0,
           failedCount: 0,
-          completedRevenue: 0
         },
         methodDistribution,
         serviceDistribution,
