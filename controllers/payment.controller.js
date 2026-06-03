@@ -1,6 +1,34 @@
 const Payment = require('../models/Payment.model');
 const User = require('../models/User.model');
 
+// @desc    Get Stripe public config
+// @route   GET /api/payments/stripe/config
+// @access  Public
+exports.getStripeConfig = async (req, res) => {
+  try {
+    if (!process.env.STRIPE_PUBLISHABLE_KEY) {
+      return res.status(500).json({
+        success: false,
+        message: 'Stripe publishable key is not configured',
+      });
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        publishableKey: process.env.STRIPE_PUBLISHABLE_KEY,
+      },
+    });
+  } catch (error) {
+    console.error('Get Stripe config error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch Stripe config',
+      error: error.message,
+    });
+  }
+};
+
 // @desc    Create a new payment
 // @route   POST /api/payments
 // @access  Private (User)

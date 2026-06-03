@@ -7,9 +7,12 @@ const {
   getMyPayments,
   updatePaymentStatus,
   deletePayment,
-  getPaymentStats
+  getPaymentStats,
+  getStripeConfig,
 } = require('../controllers/payment.controller');
 const { protect, authorize, verifyToken, isAdmin } = require('../middleware/auth.middleware');
+
+router.get('/stripe/config', getStripeConfig);
 
 // User routes
 router.post('/', verifyToken, createPayment);

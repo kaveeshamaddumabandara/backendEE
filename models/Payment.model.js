@@ -10,6 +10,10 @@ const paymentSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Caregiver',
   },
+  bookingId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Booking',
+  },
   amount: {
     type: Number,
     required: [true, 'Payment amount is required'],
@@ -28,7 +32,7 @@ const paymentSchema = new mongoose.Schema({
   paymentMethod: {
     type: String,
     required: [true, 'Payment method is required'],
-    enum: ['Credit Card', 'Debit Card', 'Bank Transfer']
+    enum: ['Credit Card', 'Debit Card', 'Bank Transfer', 'Cash']
   },
   status: {
     type: String,
@@ -74,6 +78,7 @@ const paymentSchema = new mongoose.Schema({
 
 // Indexes for better query performance
 paymentSchema.index({ userId: 1, createdAt: -1 });
+paymentSchema.index({ bookingId: 1 });
 paymentSchema.index({ status: 1 });
 paymentSchema.index({ createdAt: -1 });
 

@@ -6,6 +6,22 @@ const feedbackSchema = new mongoose.Schema({
     ref: 'User',
     required: true,
   },
+  careReceiverId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+  },
+  caregiverId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+  },
+  caregiverName: {
+    type: String,
+    trim: true,
+  },
+  bookingId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Booking',
+  },
   rating: {
     type: Number,
     required: true,
@@ -37,6 +53,10 @@ const feedbackSchema = new mongoose.Schema({
     required: true,
     maxlength: 1000,
   },
+  comment: {
+    type: String,
+    maxlength: 1000,
+  },
   status: {
     type: String,
     enum: ['pending', 'reviewed', 'resolved'],
@@ -59,6 +79,9 @@ const feedbackSchema = new mongoose.Schema({
 
 // Index for efficient querying
 feedbackSchema.index({ userId: 1, createdAt: -1 });
+feedbackSchema.index({ caregiverId: 1, createdAt: -1 });
+feedbackSchema.index({ careReceiverId: 1, createdAt: -1 });
+feedbackSchema.index({ bookingId: 1 }, { unique: true, sparse: true });
 feedbackSchema.index({ status: 1 });
 feedbackSchema.index({ rating: 1 });
 feedbackSchema.index({ category: 1 });
