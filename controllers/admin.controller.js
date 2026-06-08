@@ -98,10 +98,46 @@ exports.getUserById = async (req, res) => {
     }
 
     let profile = null;
+
     if (user.role === 'caregiver') {
-      profile = await Caregiver.findOne({ userId: user._id });
+      const raw = await Caregiver.findOne({ userId: user._id }).lean();
+      if (raw) {
+        profile = {
+          ...raw,
+          // Normalise to plural names the frontend expects
+          specializations: raw.specialization || [],
+          qualifications: raw.qualification ? [raw.qualification] : [],
+          certificationNames: (raw.certifications || []).map(c => c.name).filter(Boolean),
+        };
+      }
     } else if (user.role === 'carereceiver' || user.role === 'care-receiver') {
-      profile = await CareReceiver.findOne({ userId: user._id });
+      const raw = await CareReceiver.findOne({ userId: user._id }).lean();
+      if (raw) {
+        // Address lives on the User model
+        const addressParts = [
+          user.address?.street,
+          user.address?.city,
+          user.address?.state,
+          user.address?.zipCode,
+        ].filter(Boolean);
+
+        // Emergency contact lives on the User model
+        const ec = user.emergencyContact;
+
+        profile = {
+          ...raw,
+          address: addressParts.length ? addressParts.join(', ') : null,
+          emergencyContactInfo: ec && (ec.name || ec.phone)
+            ? `${ec.name || ''}${ec.phone ? ' – ' + ec.phone : ''}${ec.relationship ? ' (' + ec.relationship + ')' : ''}`
+            : null,
+          // Flatten medicalHistory objects to readable strings
+          medicalConditions: (raw.medicalHistory || []).map(h => h.condition).filter(Boolean),
+          // Flatten medications objects to readable strings
+          medicationList: (raw.medications || []).map(m =>
+            [m.name, m.dosage, m.frequency].filter(Boolean).join(' · ')
+          ).filter(Boolean),
+        };
+      }
     }
 
     res.status(200).json({

@@ -8,6 +8,7 @@ const {
   getPasswordResetEmailTemplate,
   getAdminNewCaregiverTemplate,
 } = require('../utils/emailTemplates');
+const createNotification = require('../utils/createNotification');
 
 const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -253,6 +254,14 @@ exports.register = async (req, res) => {
         sendEmail({ email: adminEmail, subject: tpl.subject, html: tpl.html, text: tpl.text })
           .catch(err => console.error('Admin notification email failed:', err));
       }
+
+      createNotification({
+        type: 'caregiver_registration',
+        title: 'New Caregiver Registration',
+        message: `${user.name} (${normalizedEmail}) has submitted a registration request and is awaiting admin review.`,
+        relatedId: user._id,
+        relatedModel: 'User',
+      });
     }
 
     console.log('User registered successfully:', normalizedEmail);
