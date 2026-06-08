@@ -198,6 +198,7 @@ exports.register = async (req, res) => {
       
       // Add care requirements if provided
       if (req.body.careRequirements) {
+        careReceiverData.careRequirements = String(req.body.careRequirements).trim();
         const requirements = req.body.careRequirements.split(',').map(r => r.trim()).filter(r => r);
         // Map requirements to careNeeds enum values
         const careNeedsMap = {
