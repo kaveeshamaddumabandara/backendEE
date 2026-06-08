@@ -336,9 +336,16 @@ exports.getAssignedCaregivers = async (req, res) => {
 exports.getAvailableCaregivers = async (req, res) => {
   try {
     const Caregiver = require('../models/Caregiver.model');
-    
-    // Get all caregivers with their user details
-    const caregivers = await Caregiver.find({})
+
+    // Only show caregivers who are admin-approved (isVerified) AND have paid the registration fee
+    const activatedUserIds = (
+      await User.find({ role: 'caregiver', isVerified: true, isActive: true }).select('_id')
+    ).map(u => u._id);
+
+    const caregivers = await Caregiver.find({
+      userId: { $in: activatedUserIds },
+      registrationFeePaid: true,
+    })
       .populate({
         path: 'userId',
         select: 'name email phone profileImage address',

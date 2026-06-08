@@ -198,31 +198,41 @@ exports.getUserDistribution = async (req, res) => {
   }
 };
 
-// @desc    Get recent activities
-// @route   GET /api/dashboard/recent-activities
+// @desc    Get recent activities (paginated)
+// @route   GET /api/dashboard/recent-activities?page=1&limit=5
 // @access  Private/Admin
 exports.getRecentActivities = async (req, res) => {
   try {
-    // Get recently registered users
-    const recentUsers = await User.find()
-      .sort({ createdAt: -1 })
-      .limit(10)
-      .select('name email role createdAt');
+    const page  = Math.max(1, parseInt(req.query.page)  || 1);
+    const limit = Math.min(50, Math.max(1, parseInt(req.query.limit) || 5));
+    const skip  = (page - 1) * limit;
 
-    const activities = recentUsers.map(user => {
-      const timeAgo = getTimeAgo(user.createdAt);
-      return {
-        id: user._id,
-        type: 'new_user',
-        message: `New ${user.role} registered: ${user.name}`,
-        time: timeAgo,
-        status: 'pending',
-      };
-    });
+    const [recentUsers, total] = await Promise.all([
+      User.find()
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .select('name email role createdAt'),
+      User.countDocuments(),
+    ]);
+
+    const activities = recentUsers.map(user => ({
+      id: user._id,
+      type: 'new_user',
+      message: `New ${user.role} registered: ${user.name}`,
+      time: getTimeAgo(user.createdAt),
+      status: 'pending',
+    }));
 
     res.status(200).json({
       status: 'success',
       data: activities,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
     });
   } catch (error) {
     console.error('Get recent activities error:', error);

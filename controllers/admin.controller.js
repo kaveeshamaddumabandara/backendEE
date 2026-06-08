@@ -1,6 +1,11 @@
 const User = require('../models/User.model');
 const Caregiver = require('../models/Caregiver.model');
 const CareReceiver = require('../models/CareReceiver.model');
+const sendEmail = require('../utils/sendEmail');
+const {
+  getCaregiverApprovedTemplate,
+  getCaregiverRejectedTemplate,
+} = require('../utils/emailTemplates');
 
 // @desc    Get dashboard statistics
 // @route   GET /api/admin/dashboard
@@ -373,6 +378,9 @@ exports.getPendingRequests = async (req, res) => {
             policeVerification: caregiver.policeVerification || '',
             medicalCertificate: caregiver.medicalCertificate || '',
           };
+
+          // Payment status
+          userObj.registrationFeePaid = caregiver.registrationFeePaid || false;
         }
         
         // Add location info from address
@@ -416,7 +424,13 @@ exports.approveRequest = async (req, res) => {
 
     user.isVerified = true;
     user.isActive = true;
+    user.rejectionReason = '';
     await user.save();
+
+    // Notify caregiver via email (fire-and-forget)
+    const tpl = getCaregiverApprovedTemplate(user.name);
+    sendEmail({ email: user.email, subject: tpl.subject, html: tpl.html, text: tpl.text })
+      .catch(err => console.error('Caregiver approval email failed:', err));
 
     res.status(200).json({
       status: 'success',
@@ -446,10 +460,16 @@ exports.rejectRequest = async (req, res) => {
       });
     }
 
+    const rejectionReason = reason || 'No reason provided';
     user.isVerified = false;
     user.isActive = false;
-    user.rejectionReason = reason || 'No reason provided';
+    user.rejectionReason = rejectionReason;
     await user.save();
+
+    // Notify caregiver via email (fire-and-forget)
+    const tpl = getCaregiverRejectedTemplate(user.name, rejectionReason);
+    sendEmail({ email: user.email, subject: tpl.subject, html: tpl.html, text: tpl.text })
+      .catch(err => console.error('Caregiver rejection email failed:', err));
 
     res.status(200).json({
       status: 'success',

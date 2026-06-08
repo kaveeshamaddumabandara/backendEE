@@ -70,6 +70,13 @@ exports.createRegistrationFeePaymentIntent = async (req, res) => {
       });
     }
 
+    if (!user.isVerified) {
+      return res.status(403).json({
+        success: false,
+        message: 'Your application is still under review. You will be notified by email once approved.',
+      });
+    }
+
     if (caregiver.registrationFeePaid) {
       return res.status(400).json({
         success: false,
@@ -127,6 +134,13 @@ exports.processRegistrationFeePayment = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: 'Caregiver profile not found',
+      });
+    }
+
+    if (!user.isVerified) {
+      return res.status(403).json({
+        success: false,
+        message: 'Your application is still under review. You will be notified by email once approved.',
       });
     }
 
