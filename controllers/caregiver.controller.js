@@ -3,6 +3,7 @@ const User = require('../models/User.model');
 const Feedback = require('../models/Feedback.model');
 const Payment = require('../models/Payment.model');
 const Booking = require('../models/Booking.model');
+const { normalizeWorkTime } = require('../utils/bookingOverlap');
 
 // @desc    Get caregiver dashboard stats
 // @route   GET /api/caregiver/dashboard/stats
@@ -282,7 +283,37 @@ exports.getProfile = async (req, res) => {
 // @access  Private/Caregiver
 exports.updateProfile = async (req, res) => {
   try {
-    const { profileImage, name, phone, ...caregiverData } = req.body;
+    const { profileImage, name, phone, workStartTime, workEndTime, ...caregiverData } = req.body;
+
+    let normalizedWorkStart;
+    let normalizedWorkEnd;
+
+    if (workStartTime !== undefined || workEndTime !== undefined) {
+      normalizedWorkStart = normalizeWorkTime(workStartTime);
+      normalizedWorkEnd = normalizeWorkTime(workEndTime);
+
+      if (!normalizedWorkStart || !normalizedWorkEnd) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Please provide valid working hours in HH:MM format (e.g. 09:00 and 17:00)',
+        });
+      }
+
+      const workStartMinutes = parseInt(normalizedWorkStart.split(':')[0], 10) * 60
+        + parseInt(normalizedWorkStart.split(':')[1], 10);
+      const workEndMinutes = parseInt(normalizedWorkEnd.split(':')[0], 10) * 60
+        + parseInt(normalizedWorkEnd.split(':')[1], 10);
+
+      if (workEndMinutes <= workStartMinutes) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Work end time must be after work start time',
+        });
+      }
+
+      caregiverData.workStartTime = normalizedWorkStart;
+      caregiverData.workEndTime = normalizedWorkEnd;
+    }
 
     // Update User model fields (profileImage, name, phone)
     if (profileImage !== undefined || name || phone) {
