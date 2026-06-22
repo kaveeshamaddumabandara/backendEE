@@ -1,5 +1,6 @@
 const Payment = require('../models/Payment.model');
 const User = require('../models/User.model');
+const Caregiver = require('../models/Caregiver.model');
 
 // @desc    Get Stripe public config
 // @route   GET /api/payments/stripe/config
@@ -383,16 +384,35 @@ exports.getPaymentStats = async (req, res) => {
       { $sort: { _id: 1 } }
     ]);
 
+    // Count approved caregivers whose registration fee is not yet paid.
+    // The Stripe flow never creates a 'pending' Payment document, so these
+    // would never appear in the aggregation pendingCount above.
+    const approvedCaregiverUserIds = (
+      await User.find({ role: 'caregiver', isVerified: true, isActive: true }).select('_id')
+    ).map(u => u._id);
+
+    const pendingRegistrationFees = await Caregiver.countDocuments({
+      userId: { $in: approvedCaregiverUserIds },
+      registrationFeePaid: false,
+    });
+
+    const overview = stats[0] || {
+      grossRevenue: 0,
+      completedRevenue: 0,
+      totalTransactions: 0,
+      completedCount: 0,
+      pendingCount: 0,
+      failedCount: 0,
+    };
+
     res.status(200).json({
       success: true,
       data: {
-        overview: stats[0] || {
-          grossRevenue: 0,
-          completedRevenue: 0,
-          totalTransactions: 0,
-          completedCount: 0,
-          pendingCount: 0,
-          failedCount: 0,
+        overview: {
+          ...overview,
+          // Total pending = Payment-level pending + approved-but-unpaid registration fees
+          pendingCount: (overview.pendingCount || 0) + pendingRegistrationFees,
+          pendingRegistrationFees,
         },
         methodDistribution,
         serviceDistribution,

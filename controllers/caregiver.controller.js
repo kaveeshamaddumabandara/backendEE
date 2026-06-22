@@ -10,7 +10,7 @@ const Booking = require('../models/Booking.model');
 exports.getDashboardStats = async (req, res) => {
   try {
     const caregiver = await Caregiver.findOne({ userId: req.user.id });
-    
+
     if (!caregiver) {
       return res.status(404).json({
         status: 'error',
@@ -18,68 +18,55 @@ exports.getDashboardStats = async (req, res) => {
       });
     }
 
-    // Get current week date range
+    // --- Total lifetime earnings from completed bookings ---
+    const completedBookings = await Booking.find({
+      caregiverId: caregiver.userId,
+      status: 'completed',
+    });
+
+    const totalEarnings = completedBookings.reduce((sum, b) => {
+      // Use stored totalAmount if available, otherwise derive from hourlyRate × duration
+      if (b.totalAmount > 0) return sum + b.totalAmount;
+      const hours = Number(b.duration) > 0 ? Number(b.duration) : 0;
+      return sum + hours * (b.hourlyRate || 0);
+    }, 0);
+
+    // --- Active clients: unique care receivers with at least one confirmed/completed booking ---
+    const uniqueClientIds = await Booking.distinct('careReceiverId', {
+      caregiverId: caregiver.userId,
+      status: { $in: ['confirmed', 'completed'] },
+    });
+    const activeClients = uniqueClientIds.length;
+
+    // --- Hours this week ---
     const now = new Date();
-    const startOfWeek = new Date(now.setDate(now.getDate() - now.getDay()));
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - now.getDay());
     startOfWeek.setHours(0, 0, 0, 0);
     const endOfWeek = new Date(startOfWeek);
     endOfWeek.setDate(startOfWeek.getDate() + 7);
 
-    // Calculate weekly earnings from payments
-    const weeklyPayments = await Payment.find({
-      caregiverId: caregiver._id,
-      createdAt: { $gte: startOfWeek, $lt: endOfWeek },
-      status: { $in: ['completed', 'pending'] },
+    const weeklyBookings = await Booking.find({
+      caregiverId: caregiver.userId,
+      date: { $gte: startOfWeek, $lt: endOfWeek },
+      status: { $in: ['confirmed', 'completed'] },
     });
 
-    let totalEarnings = weeklyPayments.reduce((sum, payment) => sum + payment.amount, 0);
-    let totalHours = weeklyPayments.reduce((sum, payment) => sum + (payment.hoursWorked || 0), 0);
+    const hoursThisWeek = weeklyBookings.reduce((sum, b) => {
+      return sum + (Number(b.duration) > 0 ? Number(b.duration) : 0);
+    }, 0);
 
-    // If no payments found, calculate from bookings
-    if (totalEarnings === 0) {
-      const weeklyBookings = await Booking.find({
-        caregiverId: caregiver.userId,
-        date: { $gte: startOfWeek, $lt: endOfWeek },
-        status: { $in: ['confirmed', 'completed'] },
-      });
-
-      // Calculate earnings and hours from bookings
-      for (const booking of weeklyBookings) {
-        const startTime = booking.startTime ? parseInt(booking.startTime.split(':')[0]) : 9;
-        const endTime = booking.endTime ? parseInt(booking.endTime.split(':')[0]) : 17;
-        const hours = endTime - startTime;
-        const rate = booking.hourlyRate || 800;
-        
-        totalHours += hours;
-        totalEarnings += hours * rate;
-      }
-    }
-
-    // Get active clients count from bookings if not in caregiver profile
-    let activeClients = caregiver.assignedCareReceivers?.length || 0;
-    if (activeClients === 0) {
-      const uniqueClients = await Booking.distinct('careReceiverId', {
-        caregiverId: caregiver.userId,
-        status: { $in: ['confirmed', 'completed'] },
-      });
-      activeClients = uniqueClients.length;
-    }
-
-    // Get rating
-    const rating = caregiver.rating || 4.8;
-
-    // If still no data, provide default values for better UX
-    const finalEarnings = totalEarnings > 0 ? Math.round(totalEarnings) : 45000;
-    const finalClients = activeClients > 0 ? activeClients : 12;
-    const finalHours = totalHours > 0 ? Math.round(totalHours) : 38;
+    // --- Average rating directly from caregiver profile (set by review logic) ---
+    const rating = caregiver.rating || 0;
 
     res.status(200).json({
       status: 'success',
       data: {
-        earnings: finalEarnings,
-        clients: finalClients,
-        hours: finalHours,
+        earnings: Math.round(totalEarnings),
+        clients: activeClients,
+        hours: Math.round(hoursThisWeek),
         rating: parseFloat(rating.toFixed(1)),
+        totalReviews: caregiver.totalReviews || 0,
         lastUpdated: new Date().toISOString(),
       },
     });

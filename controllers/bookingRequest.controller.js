@@ -2,6 +2,7 @@ const BookingRequest = require('../models/BookingRequest.model');
 const Booking = require('../models/Booking.model');
 const User = require('../models/User.model');
 const Caregiver = require('../models/Caregiver.model');
+const createNotification = require('../utils/createNotification');
 
 // @desc    Get all pending requests for a caregiver
 // @route   GET /api/caregiver/pending-requests
@@ -271,7 +272,14 @@ exports.createBookingRequest = async (req, res) => {
       .populate('caregiverId', 'name email phone')
       .populate('careReceiverId', 'name email phone profileImage');
 
-    // TODO: Send notification to caregiver
+    const careReceiverUser = await User.findById(careReceiverId).select('name');
+    createNotification({
+      type: 'new_booking',
+      title: 'New Booking Request',
+      message: `${careReceiverUser?.name || 'A care receiver'} sent a booking request to caregiver for ${serviceType} on ${requestedDate ? new Date(requestedDate).toLocaleDateString() : 'an upcoming date'}.`,
+      relatedId: bookingRequest._id,
+      relatedModel: 'BookingRequest',
+    });
 
     res.status(201).json({
       success: true,

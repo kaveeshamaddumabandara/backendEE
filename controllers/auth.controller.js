@@ -4,7 +4,11 @@ const User = require('../models/User.model');
 const Caregiver = require('../models/Caregiver.model');
 const CareReceiver = require('../models/CareReceiver.model');
 const sendEmail = require('../utils/sendEmail');
-const { getPasswordResetEmailTemplate } = require('../utils/emailTemplates');
+const {
+  getPasswordResetEmailTemplate,
+  getAdminNewCaregiverTemplate,
+} = require('../utils/emailTemplates');
+const createNotification = require('../utils/createNotification');
 
 const normalizeEmail = (email) => String(email || '').trim().toLowerCase();
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -194,6 +198,7 @@ exports.register = async (req, res) => {
       
       // Add care requirements if provided
       if (req.body.careRequirements) {
+        careReceiverData.careRequirements = String(req.body.careRequirements).trim();
         const requirements = req.body.careRequirements.split(',').map(r => r.trim()).filter(r => r);
         // Map requirements to careNeeds enum values
         const careNeedsMap = {
@@ -234,8 +239,31 @@ exports.register = async (req, res) => {
       phone: user.phone || '',
       profileImage: user.profileImage || '',
       isActive: user.isActive,
+      isVerified: user.isVerified || false,
+      rejectionReason: user.rejectionReason || '',
       registrationFeePaid,
     };
+
+    // Notify admin about new caregiver registration (fire-and-forget)
+    if (role === 'caregiver') {
+      const adminEmail = process.env.ADMIN_EMAIL;
+      if (adminEmail) {
+        const adminPortalUrl = process.env.FRONTEND_URL
+          ? `${process.env.FRONTEND_URL}/pending-requests`
+          : null;
+        const tpl = getAdminNewCaregiverTemplate(user.name, normalizedEmail, adminPortalUrl);
+        sendEmail({ email: adminEmail, subject: tpl.subject, html: tpl.html, text: tpl.text })
+          .catch(err => console.error('Admin notification email failed:', err));
+      }
+
+      createNotification({
+        type: 'caregiver_registration',
+        title: 'New Caregiver Registration',
+        message: `${user.name} (${normalizedEmail}) has submitted a registration request and is awaiting admin review.`,
+        relatedId: user._id,
+        relatedModel: 'User',
+      });
+    }
 
     console.log('User registered successfully:', normalizedEmail);
 
@@ -307,10 +335,10 @@ exports.login = async (req, res) => {
 
     // Check if account is active
     if (!user.isActive) {
-      return res.status(401).json({
-        status: 'error',
-        message: 'Account has been deactivated',
-      });
+      const message = user.rejectionReason
+        ? `Your registration has been rejected. Reason: ${user.rejectionReason}`
+        : 'Your account has been deactivated. Please contact support.';
+      return res.status(401).json({ status: 'error', message });
     }
 
     // Generate token
@@ -332,6 +360,8 @@ exports.login = async (req, res) => {
       phone: user.phone || '',
       profileImage: user.profileImage || '',
       isActive: user.isActive,
+      isVerified: user.isVerified || false,
+      rejectionReason: user.rejectionReason || '',
       registrationFeePaid,
     };
 
@@ -428,7 +458,9 @@ exports.forgotPassword = async (req, res) => {
       });
     }
 
-    const user = await User.findOne({ email });
+    const normalizedEmail = email.toLowerCase().trim();
+
+    const user = await User.findOne({ email: normalizedEmail });
 
     if (!user) {
       // Don't reveal if user exists or not for security
@@ -455,8 +487,8 @@ exports.forgotPassword = async (req, res) => {
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
     const resetUrl = `${frontendUrl}/reset-password/${resetToken}`;
 
-    // Get email template
-    const emailContent = getPasswordResetEmailTemplate(resetUrl, user.name);
+    // Get email template (pass raw token so mobile users can enter it manually)
+    const emailContent = getPasswordResetEmailTemplate(resetUrl, user.name, resetToken);
 
     // Try to send email
     const emailResult = await sendEmail({
@@ -496,7 +528,8 @@ exports.forgotPassword = async (req, res) => {
     // Clear reset token if email sending fails
     if (error.name === 'Error') {
       try {
-        const user = await User.findOne({ email: req.body.email });
+        const cleanupEmail = req.body.email ? req.body.email.toLowerCase().trim() : '';
+        const user = await User.findOne({ email: cleanupEmail });
         if (user) {
           user.resetPasswordToken = undefined;
           user.resetPasswordExpire = undefined;

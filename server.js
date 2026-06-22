@@ -23,6 +23,7 @@ const bookingRoutes = require('./routes/booking.routes');
 const careDocumentationRoutes = require('./routes/careDocumentation.routes');
 const caregiverPaymentRoutes = require('./routes/caregiverPayment.routes');
 const contactRoutes = require('./routes/contact.routes');
+const notificationRoutes = require('./routes/notification.routes');
 
 // Initialize express app
 const app = express();
@@ -79,6 +80,7 @@ app.use('/api/carereceiver', bookingRoutes);
 app.use('/api/care-documentation', careDocumentationRoutes);
 app.use('/api/caregiver/payment', caregiverPaymentRoutes);
 app.use('/api/contact', contactRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // Health check route
 app.get('/api/health', (req, res) => {

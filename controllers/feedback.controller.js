@@ -2,6 +2,7 @@ const Feedback = require('../models/Feedback.model');
 const User = require('../models/User.model');
 const Booking = require('../models/Booking.model');
 const Caregiver = require('../models/Caregiver.model');
+const createNotification = require('../utils/createNotification');
 
 const escapeRegex = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -62,6 +63,14 @@ exports.submitFeedback = async (req, res) => {
 
     // Populate user details
     await feedback.populate('userId', 'name email role');
+
+    createNotification({
+      type: 'new_feedback',
+      title: 'New Feedback Received',
+      message: `${feedback.userId?.name || 'A user'} submitted ${feedbackType || 'general'} feedback with a ${rating}-star rating.`,
+      relatedId: feedback._id,
+      relatedModel: 'Feedback',
+    });
 
     res.status(201).json({
       success: true,

@@ -2,6 +2,7 @@ const Payment = require('../models/Payment.model');
 const Caregiver = require('../models/Caregiver.model');
 const User = require('../models/User.model');
 const Stripe = require('stripe');
+const createNotification = require('../utils/createNotification');
 
 const REGISTRATION_FEE_LKR = 1000;
 const FLAT_FEE_PER_CYCLE_LKR = 1000; // flat fee charged every 20 completed bookings
@@ -70,6 +71,13 @@ exports.createRegistrationFeePaymentIntent = async (req, res) => {
       });
     }
 
+    if (!user.isVerified) {
+      return res.status(403).json({
+        success: false,
+        message: 'Your application is still under review. You will be notified by email once approved.',
+      });
+    }
+
     if (caregiver.registrationFeePaid) {
       return res.status(400).json({
         success: false,
@@ -127,6 +135,13 @@ exports.processRegistrationFeePayment = async (req, res) => {
       return res.status(404).json({
         success: false,
         message: 'Caregiver profile not found',
+      });
+    }
+
+    if (!user.isVerified) {
+      return res.status(403).json({
+        success: false,
+        message: 'Your application is still under review. You will be notified by email once approved.',
       });
     }
 
@@ -211,6 +226,14 @@ exports.processRegistrationFeePayment = async (req, res) => {
     caregiver.registrationFeeAmount = REGISTRATION_FEE_LKR;
     caregiver.registrationFeePaymentId = payment._id;
     await caregiver.save();
+
+    createNotification({
+      type: 'registration_fee_paid',
+      title: 'Registration Fee Paid',
+      message: `${user.name} has paid the registration fee of LKR ${REGISTRATION_FEE_LKR}. Their account is now active.`,
+      relatedId: caregiverId,
+      relatedModel: 'User',
+    });
 
     res.status(200).json({
       success: true,

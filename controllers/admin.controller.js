@@ -1,6 +1,11 @@
 const User = require('../models/User.model');
 const Caregiver = require('../models/Caregiver.model');
 const CareReceiver = require('../models/CareReceiver.model');
+const sendEmail = require('../utils/sendEmail');
+const {
+  getCaregiverApprovedTemplate,
+  getCaregiverRejectedTemplate,
+} = require('../utils/emailTemplates');
 
 // @desc    Get dashboard statistics
 // @route   GET /api/admin/dashboard
@@ -93,10 +98,46 @@ exports.getUserById = async (req, res) => {
     }
 
     let profile = null;
+
     if (user.role === 'caregiver') {
-      profile = await Caregiver.findOne({ userId: user._id });
+      const raw = await Caregiver.findOne({ userId: user._id }).lean();
+      if (raw) {
+        profile = {
+          ...raw,
+          // Normalise to plural names the frontend expects
+          specializations: raw.specialization || [],
+          qualifications: raw.qualification ? [raw.qualification] : [],
+          certificationNames: (raw.certifications || []).map(c => c.name).filter(Boolean),
+        };
+      }
     } else if (user.role === 'carereceiver' || user.role === 'care-receiver') {
-      profile = await CareReceiver.findOne({ userId: user._id });
+      const raw = await CareReceiver.findOne({ userId: user._id }).lean();
+      if (raw) {
+        // Address lives on the User model
+        const addressParts = [
+          user.address?.street,
+          user.address?.city,
+          user.address?.state,
+          user.address?.zipCode,
+        ].filter(Boolean);
+
+        // Emergency contact lives on the User model
+        const ec = user.emergencyContact;
+
+        profile = {
+          ...raw,
+          address: addressParts.length ? addressParts.join(', ') : null,
+          emergencyContactInfo: ec && (ec.name || ec.phone)
+            ? `${ec.name || ''}${ec.phone ? ' – ' + ec.phone : ''}${ec.relationship ? ' (' + ec.relationship + ')' : ''}`
+            : null,
+          // Flatten medicalHistory objects to readable strings
+          medicalConditions: (raw.medicalHistory || []).map(h => h.condition).filter(Boolean),
+          // Flatten medications objects to readable strings
+          medicationList: (raw.medications || []).map(m =>
+            [m.name, m.dosage, m.frequency].filter(Boolean).join(' · ')
+          ).filter(Boolean),
+        };
+      }
     }
 
     res.status(200).json({
@@ -373,6 +414,9 @@ exports.getPendingRequests = async (req, res) => {
             policeVerification: caregiver.policeVerification || '',
             medicalCertificate: caregiver.medicalCertificate || '',
           };
+
+          // Payment status
+          userObj.registrationFeePaid = caregiver.registrationFeePaid || false;
         }
         
         // Add location info from address
@@ -416,7 +460,13 @@ exports.approveRequest = async (req, res) => {
 
     user.isVerified = true;
     user.isActive = true;
+    user.rejectionReason = '';
     await user.save();
+
+    // Notify caregiver via email (fire-and-forget)
+    const tpl = getCaregiverApprovedTemplate(user.name);
+    sendEmail({ email: user.email, subject: tpl.subject, html: tpl.html, text: tpl.text })
+      .catch(err => console.error('Caregiver approval email failed:', err));
 
     res.status(200).json({
       status: 'success',
@@ -446,10 +496,16 @@ exports.rejectRequest = async (req, res) => {
       });
     }
 
+    const rejectionReason = reason || 'No reason provided';
     user.isVerified = false;
     user.isActive = false;
-    user.rejectionReason = reason || 'No reason provided';
+    user.rejectionReason = rejectionReason;
     await user.save();
+
+    // Notify caregiver via email (fire-and-forget)
+    const tpl = getCaregiverRejectedTemplate(user.name, rejectionReason);
+    sendEmail({ email: user.email, subject: tpl.subject, html: tpl.html, text: tpl.text })
+      .catch(err => console.error('Caregiver rejection email failed:', err));
 
     res.status(200).json({
       status: 'success',

@@ -1,4 +1,5 @@
 const sendEmail = require('../utils/sendEmail');
+const createNotification = require('../utils/createNotification');
 
 // @desc    Submit contact form
 // @route   POST /api/contact/send
@@ -220,6 +221,12 @@ exports.submitContactForm = async (req, res) => {
       email: email,
       subject: 'We received your message - ElderEase',
       html: userEmailHTML,
+    });
+
+    createNotification({
+      type: 'new_contact',
+      title: 'New Contact Form Submission',
+      message: `${name} (${email}) sent a message: "${subject}".`,
     });
 
     res.status(200).json({

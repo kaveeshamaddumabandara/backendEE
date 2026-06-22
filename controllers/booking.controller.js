@@ -5,6 +5,7 @@ const Payment = require('../models/Payment.model');
 const Feedback = require('../models/Feedback.model');
 const Stripe = require('stripe');
 const sendEmail = require('../utils/sendEmail');
+const createNotification = require('../utils/createNotification');
 
 let stripeClient;
 
@@ -610,6 +611,14 @@ exports.completeBooking = async (req, res) => {
     await booking.save();
 
     console.log(`Booking ${id} marked as completed by caregiver ${caregiverId}`);
+
+    createNotification({
+      type: 'booking_completed',
+      title: 'Booking Completed',
+      message: `A ${booking.serviceType} booking has been marked as completed by caregiver.`,
+      relatedId: booking._id,
+      relatedModel: 'Booking',
+    });
 
     // Update caregiver booking count for commission tracking
     const caregiver = await Caregiver.findOne({ userId: caregiverId });

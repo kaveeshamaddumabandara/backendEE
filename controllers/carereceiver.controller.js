@@ -1,14 +1,17 @@
 const CareReceiver = require('../models/CareReceiver.model');
 const User = require('../models/User.model');
 const Booking = require('../models/Booking.model');
+const Feedback = require('../models/Feedback.model');
 
 // @desc    Get care receiver dashboard statistics
 // @route   GET /api/carereceiver/dashboard
 // @access  Private/CareReceiver
 exports.getDashboardStats = async (req, res) => {
   try {
-    const careReceiver = await CareReceiver.findOne({ userId: req.user.id });
-    
+    const careReceiverUserId = req.user._id;
+
+    const careReceiver = await CareReceiver.findOne({ userId: careReceiverUserId });
+
     if (!careReceiver) {
       return res.status(404).json({
         status: 'error',
@@ -16,95 +19,115 @@ exports.getDashboardStats = async (req, res) => {
       });
     }
 
-    // Get all bookings for this care receiver (using User ID, not CareReceiver profile ID)
-    const bookings = await Booking.find({ careReceiverId: req.user.id })
-      .populate('caregiverId', 'name rating experience specializations')
-      .sort({ date: -1 });
+    const bookings = await Booking.find({ careReceiverId: careReceiverUserId })
+      .populate('caregiverId', 'name')
+      .sort({ date: -1 })
+      .lean();
 
-    // Get current month dates
-    const currentDate = new Date();
-    const currentMonth = currentDate.getMonth();
-    const currentYear = currentDate.getFullYear();
-    
-    // Filter bookings for current month
-    const monthlyBookings = bookings.filter(booking => {
+    const activeBookings = bookings.filter(b => b.status !== 'cancelled');
+
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+
+    const monthlyBookings = activeBookings.filter(booking => {
       const bookingDate = new Date(booking.date);
-      return bookingDate.getMonth() === currentMonth && 
-             bookingDate.getFullYear() === currentYear;
+      return (
+        bookingDate.getMonth() === currentMonth &&
+        bookingDate.getFullYear() === currentYear
+      );
     });
 
-    // Get unique assigned caregivers
     const uniqueCaregiverIds = new Set(
-      bookings
+      activeBookings
+        .filter(b => ['pending', 'confirmed', 'completed'].includes(b.status))
         .map(b => b.caregiverId?._id?.toString())
-        .filter(Boolean)
+        .filter(Boolean),
     );
 
-    // Calculate monthly hours from completed bookings
     const monthlyHours = monthlyBookings
       .filter(b => b.status === 'completed')
-      .reduce((sum, b) => sum + (b.duration || 0), 0);
+      .reduce((sum, b) => sum + (Number(b.duration) || 0), 0);
 
-    // Calculate satisfaction rate from completed bookings with ratings
-    const completedWithRatings = bookings.filter(
-      b => b.status === 'completed' && b.rating
-    );
-    const avgRating = completedWithRatings.length > 0
-      ? completedWithRatings.reduce((sum, b) => sum + (b.rating || 0), 0) / completedWithRatings.length
-      : 4.5;
-    const satisfactionRate = Math.round((avgRating / 5) * 100);
+    const careReceiverReviews = await Feedback.find({
+      userId: careReceiverUserId,
+      bookingId: { $ne: null },
+      caregiverId: { $exists: true, $ne: null },
+    })
+      .select('rating')
+      .lean();
 
-    // Generate weekly activity data (last 7 days)
+    const satisfactionRate =
+      careReceiverReviews.length > 0
+        ? Math.round(
+            (careReceiverReviews.reduce((sum, review) => sum + review.rating, 0) /
+              careReceiverReviews.length /
+              5) *
+              100,
+          )
+        : 0;
+
     const weeklyActivity = [];
-    const today = new Date();
     for (let i = 6; i >= 0; i--) {
-      const date = new Date(today);
+      const date = new Date(todayStart);
       date.setDate(date.getDate() - i);
-      date.setHours(0, 0, 0, 0);
-      
+
       const nextDay = new Date(date);
       nextDay.setDate(nextDay.getDate() + 1);
-      
+
       const dayName = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][date.getDay()];
-      
-      const dayBookings = bookings.filter(b => {
+
+      const dayBookings = activeBookings.filter(b => {
         const bookingDate = new Date(b.date);
-        return bookingDate >= date && bookingDate < nextDay && b.status === 'completed';
+        return (
+          bookingDate >= date &&
+          bookingDate < nextDay &&
+          b.status === 'completed'
+        );
       });
-      
-      const hours = dayBookings.reduce((sum, b) => sum + (b.duration || 0), 0);
-      const appointments = dayBookings.length;
-      
+
       weeklyActivity.push({
         day: dayName,
-        hours: hours,
-        appointments: appointments,
+        hours: dayBookings.reduce((sum, b) => sum + (Number(b.duration) || 0), 0),
+        appointments: dayBookings.length,
       });
     }
 
-    // Calculate service distribution
     const serviceTypes = {};
-    bookings.forEach(booking => {
-      const service = booking.serviceType || 'General Care';
+    activeBookings.forEach(booking => {
+      const service = booking.serviceType || 'Other';
       serviceTypes[service] = (serviceTypes[service] || 0) + 1;
     });
 
+    const totalActiveBookings = activeBookings.length;
     const serviceDistribution = Object.entries(serviceTypes)
       .map(([name, count]) => ({
         name,
         value: count,
-        percentage: Math.round((count / bookings.length) * 100),
+        percentage:
+          totalActiveBookings > 0
+            ? Math.round((count / totalActiveBookings) * 100)
+            : 0,
       }))
       .sort((a, b) => b.value - a.value);
 
-    // Get upcoming appointments
-    const upcomingBookings = bookings
-      .filter(b => b.status === 'confirmed' || b.status === 'pending')
+    const upcomingAppointments = activeBookings
+      .filter(b => {
+        const bookingDate = new Date(b.date);
+        bookingDate.setHours(0, 0, 0, 0);
+        return (
+          (b.status === 'confirmed' || b.status === 'pending') &&
+          bookingDate >= todayStart
+        );
+      })
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
       .slice(0, 10)
       .map(booking => ({
         id: booking._id,
         caregiver: booking.caregiverId?.name || 'Unknown Caregiver',
-        service: booking.serviceType || 'General Care',
+        service: booking.serviceType || 'Other',
         date: booking.date,
         startTime: booking.startTime,
         duration: booking.duration,
@@ -118,12 +141,13 @@ exports.getDashboardStats = async (req, res) => {
         stats: {
           monthlyAppointments: monthlyBookings.length,
           assignedCaregivers: uniqueCaregiverIds.size,
-          monthlyHours: monthlyHours,
-          satisfactionRate: satisfactionRate,
+          monthlyHours: Math.round(monthlyHours),
+          satisfactionRate,
+          totalReviews: careReceiverReviews.length,
         },
         weeklyActivity,
         serviceDistribution,
-        upcomingAppointments: upcomingBookings,
+        upcomingAppointments,
       },
     });
   } catch (error) {
@@ -191,18 +215,20 @@ exports.updateProfile = async (req, res) => {
       });
     }
 
-    // Update user fields
-    if (name) user.name = name;
-    if (phone) user.phone = phone;
-    if (dateOfBirth) user.dateOfBirth = dateOfBirth;
+    if (name !== undefined) user.name = name;
+    if (phone !== undefined) user.phone = phone;
+    if (dateOfBirth !== undefined) user.dateOfBirth = dateOfBirth;
     if (profileImage !== undefined) user.profileImage = profileImage;
-    
-    // Update address object
-    if (address || city || district) {
+
+    if (
+      address !== undefined ||
+      city !== undefined ||
+      district !== undefined
+    ) {
       if (!user.address) user.address = {};
-      if (address) user.address.street = address;
-      if (city) user.address.city = city;
-      if (district) user.address.state = district;
+      if (address !== undefined) user.address.street = address;
+      if (city !== undefined) user.address.city = city;
+      if (district !== undefined) user.address.state = district;
     }
     
     // Update emergency contact
@@ -227,30 +253,8 @@ exports.updateProfile = async (req, res) => {
       }));
     }
     
-    // Convert careRequirements to careNeeds array
-    if (careRequirements) {
-      const needsMap = {
-        'medication': 'medication',
-        'bathing': 'bathing',
-        'feeding': 'feeding',
-        'mobility': 'mobility',
-        'companionship': 'companionship',
-        'medical': 'medical-monitoring',
-        'housekeeping': 'housekeeping',
-      };
-      
-      const needs = [];
-      const requirementsLower = careRequirements.toLowerCase();
-      
-      Object.keys(needsMap).forEach(key => {
-        if (requirementsLower.includes(key)) {
-          needs.push(needsMap[key]);
-        }
-      });
-      
-      if (needs.length > 0) {
-        careReceiverUpdate.careNeeds = needs;
-      }
+    if (careRequirements !== undefined) {
+      careReceiverUpdate.careRequirements = String(careRequirements).trim();
     }
 
     // Update CareReceiver if there are fields to update
@@ -336,9 +340,16 @@ exports.getAssignedCaregivers = async (req, res) => {
 exports.getAvailableCaregivers = async (req, res) => {
   try {
     const Caregiver = require('../models/Caregiver.model');
-    
-    // Get all caregivers with their user details
-    const caregivers = await Caregiver.find({})
+
+    // Only show caregivers who are admin-approved (isVerified) AND have paid the registration fee
+    const activatedUserIds = (
+      await User.find({ role: 'caregiver', isVerified: true, isActive: true }).select('_id')
+    ).map(u => u._id);
+
+    const caregivers = await Caregiver.find({
+      userId: { $in: activatedUserIds },
+      registrationFeePaid: true,
+    })
       .populate({
         path: 'userId',
         select: 'name email phone profileImage address',

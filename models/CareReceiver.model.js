@@ -43,6 +43,11 @@ const careReceiverSchema = new mongoose.Schema({
     type: String,
     enum: ['medication', 'bathing', 'feeding', 'mobility', 'companionship', 'medical-monitoring', 'housekeeping'],
   }],
+  careRequirements: {
+    type: String,
+    default: '',
+    trim: true,
+  },
   insuranceInfo: {
     provider: String,
     policyNumber: String,
