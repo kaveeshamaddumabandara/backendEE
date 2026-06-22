@@ -63,7 +63,6 @@ mongoose.connect(process.env.MONGODB_URI)
   console.error('❌ MongoDB connection error:', err);
   process.exit(1);
 });
-
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/admin', adminRoutes);
@@ -115,3 +114,4 @@ app.listen(PORT, () => {
 });
 
 module.exports = app;
+
