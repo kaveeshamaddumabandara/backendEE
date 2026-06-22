@@ -51,6 +51,14 @@ const caregiverSchema = new mongoose.Schema({
     enum: ['full-time', 'part-time', 'weekends only', 'flexible'],
     default: 'flexible',
   },
+  workStartTime: {
+    type: String,
+    default: '',
+  },
+  workEndTime: {
+    type: String,
+    default: '',
+  },
   hasTransportation: {
     type: Boolean,
     default: false,
