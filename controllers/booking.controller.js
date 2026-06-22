@@ -6,6 +6,41 @@ const Feedback = require('../models/Feedback.model');
 const Stripe = require('stripe');
 const sendEmail = require('../utils/sendEmail');
 const createNotification = require('../utils/createNotification');
+const { getDayRange, hasBookingOverlap, isBookingDateAllowed, isWithinWorkingHours } = require('../utils/bookingOverlap');
+
+const BLOCKING_BOOKING_STATUSES = ['pending', 'confirmed', 'completed'];
+
+const findCaregiverBookingConflict = async (caregiverUserId, date, startTime, endTime) => {
+  const dayRange = getDayRange(date);
+  const existingBookings = await Booking.find({
+    caregiverId: caregiverUserId,
+    status: { $in: BLOCKING_BOOKING_STATUSES },
+    date: { $gte: dayRange.start, $lte: dayRange.end },
+  }).select('startTime endTime duration status');
+
+  return hasBookingOverlap(startTime, endTime, existingBookings);
+};
+
+const validateCaregiverWorkingHours = async (caregiverUserId, startTime, endTime) => {
+  const caregiverProfile = await Caregiver.findOne({ userId: caregiverUserId }).select(
+    'workStartTime workEndTime',
+  );
+
+  if (
+    caregiverProfile?.workStartTime &&
+    caregiverProfile?.workEndTime &&
+    !isWithinWorkingHours(
+      startTime,
+      endTime,
+      caregiverProfile.workStartTime,
+      caregiverProfile.workEndTime,
+    )
+  ) {
+    return caregiverProfile;
+  }
+
+  return null;
+};
 
 let stripeClient;
 
@@ -125,12 +160,50 @@ exports.createBookingPaymentIntent = async (req, res) => {
       });
     }
 
+    if (!isBookingDateAllowed(date)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Bookings can only be made from tomorrow onwards',
+      });
+    }
+
     const { caregiverUser, caregiverUserId } = await resolveCaregiverUser(caregiverId);
 
     if (!caregiverUser) {
       return res.status(404).json({
         success: false,
         message: 'Caregiver not found',
+      });
+    }
+
+    const conflictingBooking = await findCaregiverBookingConflict(
+      caregiverUserId,
+      date,
+      normalizedStartTime,
+      normalizedEndTime,
+    );
+
+    if (conflictingBooking) {
+      return res.status(409).json({
+        success: false,
+        message: 'This caregiver is already booked for the selected time slot. Please choose a different time.',
+        data: {
+          startTime: conflictingBooking.startTime,
+          endTime: conflictingBooking.endTime,
+        },
+      });
+    }
+
+    const outsideWorkingHours = await validateCaregiverWorkingHours(
+      caregiverUserId,
+      normalizedStartTime,
+      normalizedEndTime,
+    );
+
+    if (outsideWorkingHours) {
+      return res.status(400).json({
+        success: false,
+        message: `Booking must be within caregiver working hours (${outsideWorkingHours.workStartTime} - ${outsideWorkingHours.workEndTime})`,
       });
     }
 
@@ -177,6 +250,57 @@ exports.createBookingPaymentIntent = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error creating booking payment intent',
+      error: error.message,
+    });
+  }
+};
+
+// Get booked time slots for a caregiver on a specific date
+exports.getCaregiverBookedSlots = async (req, res) => {
+  try {
+    const { caregiverId } = req.params;
+    const { date } = req.query;
+
+    if (!date) {
+      return res.status(400).json({
+        success: false,
+        message: 'Date is required',
+      });
+    }
+
+    const { caregiverUser, caregiverUserId } = await resolveCaregiverUser(caregiverId);
+
+    if (!caregiverUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'Caregiver not found',
+      });
+    }
+
+    const dayRange = getDayRange(date);
+    const bookings = await Booking.find({
+      caregiverId: caregiverUserId,
+      status: { $in: BLOCKING_BOOKING_STATUSES },
+      date: { $gte: dayRange.start, $lte: dayRange.end },
+    })
+      .select('startTime endTime duration status')
+      .sort({ startTime: 1 });
+
+    res.status(200).json({
+      success: true,
+      count: bookings.length,
+      data: bookings.map(booking => ({
+        startTime: booking.startTime,
+        endTime: booking.endTime,
+        duration: booking.duration,
+        status: booking.status,
+      })),
+    });
+  } catch (error) {
+    console.error('Error fetching caregiver booked slots:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching caregiver booked slots',
       error: error.message,
     });
   }
@@ -454,12 +578,50 @@ exports.createBooking = async (req, res) => {
       });
     }
 
+    if (!isBookingDateAllowed(date)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Bookings can only be made from tomorrow onwards',
+      });
+    }
+
     const { caregiverUser, caregiverUserId } = await resolveCaregiverUser(caregiverId);
 
     if (!caregiverUser) {
       return res.status(404).json({
         success: false,
         message: 'Caregiver not found',
+      });
+    }
+
+    const conflictingBooking = await findCaregiverBookingConflict(
+      caregiverUserId,
+      date,
+      normalizedStartTime,
+      normalizedEndTime,
+    );
+
+    if (conflictingBooking) {
+      return res.status(409).json({
+        success: false,
+        message: 'This caregiver is already booked for the selected time slot. Please choose a different time.',
+        data: {
+          startTime: conflictingBooking.startTime,
+          endTime: conflictingBooking.endTime,
+        },
+      });
+    }
+
+    const outsideWorkingHours = await validateCaregiverWorkingHours(
+      caregiverUserId,
+      normalizedStartTime,
+      normalizedEndTime,
+    );
+
+    if (outsideWorkingHours) {
+      return res.status(400).json({
+        success: false,
+        message: `Booking must be within caregiver working hours (${outsideWorkingHours.workStartTime} - ${outsideWorkingHours.workEndTime})`,
       });
     }
 

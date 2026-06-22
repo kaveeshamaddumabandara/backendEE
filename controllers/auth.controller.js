@@ -75,6 +75,8 @@ exports.register = async (req, res) => {
       certifications,
       education,
       availability,
+      workStartTime,
+      workEndTime,
       hourlyRate,
       bio,
       languages,
@@ -140,6 +142,34 @@ exports.register = async (req, res) => {
 
     console.log('Creating new user:', { email: normalizedEmail, role, name });
 
+    let normalizedWorkStart;
+    let normalizedWorkEnd;
+
+    if (role === 'caregiver') {
+      const { normalizeWorkTime } = require('../utils/bookingOverlap');
+      normalizedWorkStart = normalizeWorkTime(workStartTime);
+      normalizedWorkEnd = normalizeWorkTime(workEndTime);
+
+      if (!normalizedWorkStart || !normalizedWorkEnd) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Please provide valid working hours in HH:MM format (e.g. 09:00 and 17:00)',
+        });
+      }
+
+      const workStartMinutes = parseInt(normalizedWorkStart.split(':')[0], 10) * 60
+        + parseInt(normalizedWorkStart.split(':')[1], 10);
+      const workEndMinutes = parseInt(normalizedWorkEnd.split(':')[0], 10) * 60
+        + parseInt(normalizedWorkEnd.split(':')[1], 10);
+
+      if (workEndMinutes <= workStartMinutes) {
+        return res.status(400).json({
+          status: 'error',
+          message: 'Work end time must be after work start time',
+        });
+      }
+    }
+
     const user = await User.create(userData);
 
     // Create role-specific profile
@@ -152,6 +182,8 @@ exports.register = async (req, res) => {
         hourlyRate: hourlyRate || 0,
         bio: bio || '',
         languages: languages || [],
+        workStartTime: normalizedWorkStart,
+        workEndTime: normalizedWorkEnd,
       };
 
       // Add certifications if provided

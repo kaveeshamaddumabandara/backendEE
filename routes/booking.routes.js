@@ -3,6 +3,7 @@ const router = express.Router();
 const {
   getCaregiverBookings,
   getCareReceiverBookings,
+  getCaregiverBookedSlots,
   getPendingBookings,
   approveBooking,
   rejectBooking,
@@ -25,6 +26,7 @@ router.post('/bookings/:id/complete', authorize('caregiver'), completeBooking);
 router.post('/bookings/:id/remaining-payment', authorize('caregiver'), markRemainingPaymentReceivedByCaregiver);
 
 // Care receiver routes
+router.get('/caregivers/:caregiverId/booked-slots', authorize('carereceiver'), getCaregiverBookedSlots);
 router.get('/my-bookings', authorize('carereceiver'), getCareReceiverBookings);
 router.post('/bookings/payment-intent', authorize('carereceiver'), createBookingPaymentIntent);
 router.post('/bookings', authorize('carereceiver'), createBooking);

@@ -374,6 +374,8 @@ exports.getAvailableCaregivers = async (req, res) => {
       status: caregiver.status,
       hasTransportation: caregiver.hasTransportation,
       bio: caregiver.bio,
+      workStartTime: caregiver.workStartTime,
+      workEndTime: caregiver.workEndTime,
       role: 'caregiver',
     }));
 
