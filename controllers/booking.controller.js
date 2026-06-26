@@ -6,7 +6,7 @@ const Feedback = require('../models/Feedback.model');
 const Stripe = require('stripe');
 const sendEmail = require('../utils/sendEmail');
 const createNotification = require('../utils/createNotification');
-const { getDayRange, hasBookingOverlap, isBookingDateAllowed, isWithinWorkingHours } = require('../utils/bookingOverlap');
+const { getDayRange, hasBookingOverlap, isBookingDateAllowed, isWithinWorkingHours, parseCalendarDate } = require('../utils/bookingOverlap');
 
 const BLOCKING_BOOKING_STATUSES = ['pending', 'confirmed', 'completed'];
 
@@ -95,7 +95,7 @@ const normalizeBookingPayload = payload => {
     normalizedHourlyRate,
     computedTotalAmount,
     normalizedNeeds,
-    date,
+    date: parseCalendarDate(date) || date,
     location,
   };
 };

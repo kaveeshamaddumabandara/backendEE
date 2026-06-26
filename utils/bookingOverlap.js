@@ -50,16 +50,43 @@ const getBookingEndMinutes = booking => {
   return endMinutes;
 };
 
-const getDayRange = dateInput => {
+const parseCalendarDate = dateInput => {
+  if (!dateInput) {
+    return null;
+  }
+
+  if (typeof dateInput === 'string') {
+    const dateOnlyMatch = dateInput.trim().match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (dateOnlyMatch) {
+      const year = parseInt(dateOnlyMatch[1], 10);
+      const month = parseInt(dateOnlyMatch[2], 10) - 1;
+      const day = parseInt(dateOnlyMatch[3], 10);
+      const parsed = new Date(year, month, day, 0, 0, 0, 0);
+
+      if (!Number.isNaN(parsed.getTime())) {
+        return parsed;
+      }
+    }
+  }
+
   const parsed = new Date(dateInput);
   if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+
+  return new Date(parsed.getFullYear(), parsed.getMonth(), parsed.getDate(), 0, 0, 0, 0);
+};
+
+const getDayRange = dateInput => {
+  const calendarDate = parseCalendarDate(dateInput);
+  if (!calendarDate) {
     throw new Error('Invalid date');
   }
 
-  const start = new Date(parsed);
+  const start = new Date(calendarDate);
   start.setHours(0, 0, 0, 0);
 
-  const end = new Date(parsed);
+  const end = new Date(calendarDate);
   end.setHours(23, 59, 59, 999);
 
   return { start, end };
@@ -73,8 +100,11 @@ const getMinimumBookingDate = () => {
 };
 
 const isBookingDateAllowed = dateInput => {
-  const bookingDay = new Date(dateInput);
-  bookingDay.setHours(0, 0, 0, 0);
+  const bookingDay = parseCalendarDate(dateInput);
+  if (!bookingDay) {
+    return false;
+  }
+
   return bookingDay >= getMinimumBookingDate();
 };
 
@@ -150,6 +180,7 @@ const isWithinWorkingHours = (startTime, endTime, workStartTime, workEndTime) =>
 
 module.exports = {
   parseTimeToMinutes,
+  parseCalendarDate,
   doTimesOverlap,
   getBookingEndMinutes,
   getDayRange,

@@ -6,6 +6,7 @@ const NotificationSchema = new mongoose.Schema(
       type: String,
       enum: [
         'caregiver_registration',
+        'caregiver_profile_change',
         'registration_fee_paid',
         'new_booking',
         'booking_completed',
