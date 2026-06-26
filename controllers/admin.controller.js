@@ -1,11 +1,13 @@
 const User = require('../models/User.model');
 const Caregiver = require('../models/Caregiver.model');
 const CareReceiver = require('../models/CareReceiver.model');
+const CaregiverProfileChangeRequest = require('../models/CaregiverProfileChangeRequest.model');
 const sendEmail = require('../utils/sendEmail');
 const {
   getCaregiverApprovedTemplate,
   getCaregiverRejectedTemplate,
 } = require('../utils/emailTemplates');
+const { formatAddress } = require('../utils/profileChangeRequest');
 
 // @desc    Get dashboard statistics
 // @route   GET /api/admin/dashboard
@@ -516,6 +518,160 @@ exports.rejectRequest = async (req, res) => {
     res.status(500).json({
       status: 'error',
       message: error.message || 'Error rejecting request',
+    });
+  }
+};
+
+// @desc    Get pending caregiver phone/address change requests
+// @route   GET /api/admin/profile-change-requests
+// @access  Private/Admin
+exports.getProfileChangeRequests = async (req, res) => {
+  try {
+    const { status = 'pending' } = req.query;
+    const query = {};
+
+    if (status !== 'all') {
+      query.status = status;
+    }
+
+    const requests = await CaregiverProfileChangeRequest.find(query)
+      .populate('userId', 'name email phone address profileImage role isVerified isActive')
+      .sort({ createdAt: -1 });
+
+    const formattedRequests = requests.map(request => ({
+      _id: request._id,
+      status: request.status,
+      rejectionReason: request.rejectionReason,
+      submittedAt: request.createdAt,
+      reviewedAt: request.reviewedAt,
+      pendingPhone: request.pendingPhone || '',
+      pendingAddress: request.pendingAddress || null,
+      pendingAddressLabel: formatAddress(request.pendingAddress),
+      currentPhone: request.userId?.phone || '',
+      currentAddress: formatAddress(request.userId?.address),
+      caregiver: request.userId
+        ? {
+            _id: request.userId._id,
+            name: request.userId.name,
+            email: request.userId.email,
+            phone: request.userId.phone,
+            address: formatAddress(request.userId.address),
+            profileImage: request.userId.profileImage,
+          }
+        : null,
+    }));
+
+    res.status(200).json({
+      status: 'success',
+      count: formattedRequests.length,
+      data: formattedRequests,
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      message: error.message || 'Error fetching profile change requests',
+    });
+  }
+};
+
+// @desc    Approve caregiver phone/address change request
+// @route   PATCH /api/admin/profile-change-requests/:id/approve
+// @access  Private/Admin
+exports.approveProfileChangeRequest = async (req, res) => {
+  try {
+    const request = await CaregiverProfileChangeRequest.findById(req.params.id).populate(
+      'userId',
+      'name email phone address',
+    );
+
+    if (!request) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Profile change request not found',
+      });
+    }
+
+    if (request.status !== 'pending') {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Only pending profile change requests can be approved',
+      });
+    }
+
+    const user = await User.findById(request.userId?._id || request.userId);
+    if (!user) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Caregiver user not found',
+      });
+    }
+
+    if (request.pendingPhone) {
+      user.phone = request.pendingPhone;
+    }
+
+    if (request.pendingAddress) {
+      user.address = request.pendingAddress;
+    }
+
+    await user.save();
+
+    request.status = 'approved';
+    request.reviewedAt = new Date();
+    request.reviewedBy = req.user._id;
+    request.rejectionReason = '';
+    await request.save();
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Profile contact details approved and updated successfully',
+      data: request,
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      message: error.message || 'Error approving profile change request',
+    });
+  }
+};
+
+// @desc    Reject caregiver phone/address change request
+// @route   PATCH /api/admin/profile-change-requests/:id/reject
+// @access  Private/Admin
+exports.rejectProfileChangeRequest = async (req, res) => {
+  try {
+    const { reason } = req.body;
+    const request = await CaregiverProfileChangeRequest.findById(req.params.id);
+
+    if (!request) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'Profile change request not found',
+      });
+    }
+
+    if (request.status !== 'pending') {
+      return res.status(400).json({
+        status: 'error',
+        message: 'Only pending profile change requests can be rejected',
+      });
+    }
+
+    request.status = 'rejected';
+    request.rejectionReason = reason || 'No reason provided';
+    request.reviewedAt = new Date();
+    request.reviewedBy = req.user._id;
+    await request.save();
+
+    res.status(200).json({
+      status: 'success',
+      message: 'Profile change request rejected successfully',
+      data: request,
+    });
+  } catch (error) {
+    res.status(500).json({
+      status: 'error',
+      message: error.message || 'Error rejecting profile change request',
     });
   }
 };

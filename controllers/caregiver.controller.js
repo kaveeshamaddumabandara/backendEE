@@ -3,7 +3,29 @@ const User = require('../models/User.model');
 const Feedback = require('../models/Feedback.model');
 const Payment = require('../models/Payment.model');
 const Booking = require('../models/Booking.model');
-const { normalizeWorkTime } = require('../utils/bookingOverlap');
+const CaregiverProfileChangeRequest = require('../models/CaregiverProfileChangeRequest.model');
+const createNotification = require('../utils/createNotification');
+const { normalizeWorkTime, parseCalendarDate, getBookingEndMinutes } = require('../utils/bookingOverlap');
+const {
+  normalizeAddressInput,
+  formatAddress,
+  phonesEqual,
+  addressesEqual,
+} = require('../utils/profileChangeRequest');
+
+const buildPendingContactChange = request => {
+  if (!request || request.status !== 'pending') {
+    return null;
+  }
+
+  return {
+    _id: request._id,
+    pendingPhone: request.pendingPhone || '',
+    pendingAddress: request.pendingAddress || null,
+    pendingAddressLabel: formatAddress(request.pendingAddress),
+    submittedAt: request.createdAt,
+  };
+};
 
 // @desc    Get caregiver dashboard stats
 // @route   GET /api/caregiver/dashboard/stats
@@ -93,31 +115,95 @@ exports.getPerformanceMetrics = async (req, res) => {
       });
     }
 
-    // Calculate metrics (mock data for now, can be enhanced with real tracking)
+    const caregiverUserId = caregiver.userId;
+    const bookings = await Booking.find({ caregiverId: caregiverUserId });
+
+    const completed = bookings.filter(booking => booking.status === 'completed');
+    const cancelled = bookings.filter(booking => booking.status === 'cancelled');
+    const resolvedCount = completed.length + cancelled.length;
+    const taskCompletion = resolvedCount > 0
+      ? Math.round((completed.length / resolvedCount) * 100)
+      : 0;
+
+    const respondedBookings = bookings.filter(
+      booking => booking.responseDate && booking.createdAt,
+    );
+    const avgResponseHours = respondedBookings.length > 0
+      ? respondedBookings.reduce((sum, booking) => {
+        const hours =
+          (new Date(booking.responseDate).getTime() - new Date(booking.createdAt).getTime())
+          / (1000 * 60 * 60);
+        return sum + Math.max(hours, 0);
+      }, 0) / respondedBookings.length
+      : 0;
+    const responseTimeScore = avgResponseHours <= 2
+      ? 95
+      : avgResponseHours <= 6
+        ? 85
+        : avgResponseHours <= 24
+          ? 75
+          : 60;
+
+    const clientBookingCounts = completed.reduce((counts, booking) => {
+      const clientId = String(booking.careReceiverId);
+      counts[clientId] = (counts[clientId] || 0) + 1;
+      return counts;
+    }, {});
+    const uniqueClients = Object.keys(clientBookingCounts).length;
+    const repeatClients = Object.values(clientBookingCounts).filter(count => count > 1).length;
+    const clientRetention = uniqueClients > 0
+      ? Math.round((repeatClients / uniqueClients) * 100)
+      : 0;
+
+    const punctualCompleted = completed.filter(booking => {
+      if (!booking.completionDate) {
+        return false;
+      }
+
+      const calendarDate = parseCalendarDate(booking.date);
+      const endMinutes = getBookingEndMinutes(booking);
+      if (!calendarDate || endMinutes === null) {
+        return true;
+      }
+
+      const endDateTime = new Date(calendarDate);
+      endDateTime.setHours(
+        Math.floor(endMinutes / 60),
+        endMinutes % 60,
+        0,
+        0,
+      );
+
+      return new Date(booking.completionDate).getTime() <= endDateTime.getTime();
+    }).length;
+    const punctuality = completed.length > 0
+      ? Math.round((punctualCompleted / completed.length) * 100)
+      : 0;
+
     const metrics = [
       {
-        value: 98,
+        value: taskCompletion,
         target: 95,
         label: 'Task Completion',
         icon: 'check-circle',
         color: '#10b981',
       },
       {
-        value: 92,
+        value: responseTimeScore,
         target: 90,
         label: 'Response Time',
         icon: 'clock',
         color: '#3b82f6',
       },
       {
-        value: 87,
+        value: clientRetention,
         target: 85,
         label: 'Client Retention',
         icon: 'users',
         color: '#8b5cf6',
       },
       {
-        value: 95,
+        value: punctuality,
         target: 90,
         label: 'Punctuality',
         icon: 'calendar',
@@ -153,35 +239,60 @@ exports.getClientSatisfaction = async (req, res) => {
       });
     }
 
-    // This would ideally come from a reviews/feedback collection specific to caregivers
-    // For now, using mock percentages based on the rating
-    const rating = caregiver.rating || 4.5;
-    const totalReviews = caregiver.totalReviews || 80;
+    const feedbacks = await Feedback.find({
+      caregiverId: caregiver.userId,
+      rating: { $gte: 1, $lte: 5 },
+    }).select('rating');
+
+    const totalReviews = feedbacks.length;
+    const rating = caregiver.rating || 0;
+
+    const buckets = {
+      excellent: 0,
+      good: 0,
+      average: 0,
+      poor: 0,
+    };
+
+    feedbacks.forEach(feedback => {
+      if (feedback.rating >= 5) {
+        buckets.excellent += 1;
+      } else if (feedback.rating >= 4) {
+        buckets.good += 1;
+      } else if (feedback.rating >= 3) {
+        buckets.average += 1;
+      } else {
+        buckets.poor += 1;
+      }
+    });
+
+    const toPercentage = count =>
+      totalReviews > 0 ? Math.round((count / totalReviews) * 100) : 0;
 
     const satisfaction = [
       { 
         category: 'Excellent', 
-        percentage: 56, 
-        count: Math.round(totalReviews * 0.56),
-        color: '#10b981'
+        percentage: toPercentage(buckets.excellent), 
+        count: buckets.excellent,
+        color: '#10b981',
       },
       { 
         category: 'Good', 
-        percentage: 35, 
-        count: Math.round(totalReviews * 0.35),
-        color: '#3b82f6'
+        percentage: toPercentage(buckets.good), 
+        count: buckets.good,
+        color: '#3b82f6',
       },
       { 
         category: 'Average', 
-        percentage: 8, 
-        count: Math.round(totalReviews * 0.08),
-        color: '#f59e0b'
+        percentage: toPercentage(buckets.average), 
+        count: buckets.average,
+        color: '#f59e0b',
       },
       { 
         category: 'Poor', 
-        percentage: 1, 
-        count: Math.round(totalReviews * 0.01),
-        color: '#ef4444'
+        percentage: toPercentage(buckets.poor), 
+        count: buckets.poor,
+        color: '#ef4444',
       },
     ];
 
@@ -190,8 +301,8 @@ exports.getClientSatisfaction = async (req, res) => {
       data: {
         satisfaction,
         averageRating: rating,
-        totalReviews: totalReviews,
-        satisfactionRate: 91, // Excellent + Good
+        totalReviews,
+        satisfactionRate: toPercentage(buckets.excellent + buckets.good),
       },
     });
   } catch (error) {
@@ -223,14 +334,13 @@ exports.getRecentFeedback = async (req, res) => {
       .populate('careReceiverId', 'name')
       .populate('userId', 'name')
       .sort({ createdAt: -1 })
-      .limit(10);
+      .limit(50);
 
-    // Format feedback data
     const formattedFeedback = feedbacks.map(feedback => ({
       id: feedback._id,
       client: feedback.careReceiverId?.name || feedback.userId?.name || 'Anonymous Client',
-      rating: feedback.rating || 5,
-      comment: feedback.comment || feedback.message || 'Great service!',
+      rating: feedback.rating || 0,
+      comment: feedback.comment || feedback.message || '',
       date: new Date(feedback.createdAt).toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
@@ -266,9 +376,17 @@ exports.getProfile = async (req, res) => {
       });
     }
 
+    const pendingRequest = await CaregiverProfileChangeRequest.findOne({
+      userId: req.user.id,
+      status: 'pending',
+    });
+
     res.status(200).json({
       status: 'success',
-      data: { caregiver },
+      data: {
+        caregiver,
+        pendingContactChange: buildPendingContactChange(pendingRequest),
+      },
     });
   } catch (error) {
     res.status(500).json({
@@ -283,7 +401,23 @@ exports.getProfile = async (req, res) => {
 // @access  Private/Caregiver
 exports.updateProfile = async (req, res) => {
   try {
-    const { profileImage, name, phone, workStartTime, workEndTime, ...caregiverData } = req.body;
+    const {
+      profileImage,
+      name,
+      phone,
+      address,
+      workStartTime,
+      workEndTime,
+      ...caregiverData
+    } = req.body;
+
+    const currentUser = await User.findById(req.user.id);
+    if (!currentUser) {
+      return res.status(404).json({
+        status: 'error',
+        message: 'User not found',
+      });
+    }
 
     let normalizedWorkStart;
     let normalizedWorkEnd;
@@ -315,25 +449,68 @@ exports.updateProfile = async (req, res) => {
       caregiverData.workEndTime = normalizedWorkEnd;
     }
 
-    // Update User model fields (profileImage, name, phone)
-    if (profileImage !== undefined || name || phone) {
+    const existingPendingRequest = await CaregiverProfileChangeRequest.findOne({
+      userId: req.user.id,
+      status: 'pending',
+    });
+
+    const pendingUpdate = {
+      userId: req.user.id,
+      status: 'pending',
+      rejectionReason: '',
+      reviewedAt: undefined,
+      reviewedBy: undefined,
+    };
+    let contactChangeSubmitted = false;
+
+    if (phone !== undefined && !phonesEqual(phone, currentUser.phone)) {
+      pendingUpdate.pendingPhone = String(phone).trim();
+      contactChangeSubmitted = true;
+    } else if (existingPendingRequest?.pendingPhone) {
+      pendingUpdate.pendingPhone = existingPendingRequest.pendingPhone;
+    }
+
+    if (address !== undefined) {
+      const normalizedAddress = normalizeAddressInput(address);
+      if (normalizedAddress && !addressesEqual(normalizedAddress, currentUser.address)) {
+        pendingUpdate.pendingAddress = normalizedAddress;
+        contactChangeSubmitted = true;
+      } else if (existingPendingRequest?.pendingAddress) {
+        pendingUpdate.pendingAddress = existingPendingRequest.pendingAddress;
+      }
+    } else if (existingPendingRequest?.pendingAddress) {
+      pendingUpdate.pendingAddress = existingPendingRequest.pendingAddress;
+    }
+
+    let pendingRequest = existingPendingRequest;
+    if (contactChangeSubmitted) {
+      pendingRequest = await CaregiverProfileChangeRequest.findOneAndUpdate(
+        { userId: req.user.id },
+        pendingUpdate,
+        { upsert: true, new: true, setDefaultsOnInsert: true },
+      );
+
+      createNotification({
+        type: 'caregiver_profile_change',
+        title: 'Caregiver contact update pending',
+        message: `${currentUser.name} submitted phone/address changes for approval`,
+        relatedId: pendingRequest._id,
+        relatedModel: 'CaregiverProfileChangeRequest',
+      });
+    }
+
+    if (profileImage !== undefined || name) {
       const userUpdateData = {};
       if (profileImage !== undefined) userUpdateData.profileImage = profileImage;
       if (name) userUpdateData.name = name;
-      if (phone) userUpdateData.phone = phone;
-      
-      await User.findByIdAndUpdate(
-        req.user.id,
-        userUpdateData,
-        { new: true }
-      );
+
+      await User.findByIdAndUpdate(req.user.id, userUpdateData, { new: true });
     }
 
-    // Update Caregiver model fields
     const caregiver = await Caregiver.findOneAndUpdate(
       { userId: req.user.id },
       caregiverData,
-      { new: true, runValidators: true }
+      { new: true, runValidators: true },
     ).populate('userId', 'name email phone address profileImage dateOfBirth emergencyContact');
 
     if (!caregiver) {
@@ -345,8 +522,14 @@ exports.updateProfile = async (req, res) => {
 
     res.status(200).json({
       status: 'success',
-      message: 'Profile updated successfully',
-      data: { caregiver },
+      message: contactChangeSubmitted
+        ? 'Profile updated. Phone/address changes were submitted for admin approval.'
+        : 'Profile updated successfully',
+      data: {
+        caregiver,
+        pendingContactChange: buildPendingContactChange(pendingRequest),
+        contactChangeSubmitted,
+      },
     });
   } catch (error) {
     res.status(500).json({

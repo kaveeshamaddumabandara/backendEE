@@ -29,4 +29,8 @@ router.get('/pending-requests', adminController.getPendingRequests);
 router.patch('/requests/:id/approve', adminController.approveRequest);
 router.patch('/requests/:id/reject', adminController.rejectRequest);
 
+router.get('/profile-change-requests', adminController.getProfileChangeRequests);
+router.patch('/profile-change-requests/:id/approve', adminController.approveProfileChangeRequest);
+router.patch('/profile-change-requests/:id/reject', adminController.rejectProfileChangeRequest);
+
 module.exports = router;
