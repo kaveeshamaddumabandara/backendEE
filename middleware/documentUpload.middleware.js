@@ -10,7 +10,7 @@ const isPdfFile = file => {
 const isImageFile = file =>
   ['image/jpeg', 'image/jpg', 'image/png'].includes(file.mimetype);
 
-const storage = new CloudinaryStorage({
+const storage = new CloudinaryStorage({ // cloudinary storage for document upload
   cloudinary,
   params: async (req, file) => {
     if (isPdfFile(file)) {
@@ -29,7 +29,7 @@ const storage = new CloudinaryStorage({
   },
 });
 
-const documentUpload = multer({
+const documentUpload = multer({ // multer middleware for document upload
   storage,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10 MB per file
   fileFilter: (req, file, cb) => {

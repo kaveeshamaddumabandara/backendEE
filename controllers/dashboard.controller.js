@@ -270,7 +270,7 @@ function getTimeAgo(date) {
   return 'just now';
 }
 
-// @desc    Get platform activity (mock data for now)
+// @desc    Get platform activity
 // @route   GET /api/dashboard/platform-activity
 // @access  Private/Admin
 exports.getPlatformActivity = async (req, res) => {
