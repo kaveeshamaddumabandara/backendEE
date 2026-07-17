@@ -69,36 +69,26 @@ exports.approveRequest = async (req, res) => {
       });
     }
 
-    // Update request status
+    // Approve the request. The care receiver still needs to pay the 50%
+    // advance to convert this into a confirmed booking, so no Booking is
+    // created here.
     request.status = 'approved';
     request.responseDate = new Date();
     await request.save();
 
-    // Create actual booking entry
-    const booking = await Booking.create({
-      caregiverId: request.caregiverId,
-      careReceiverId: request.careReceiverId,
-      serviceType: request.serviceType,
-      date: request.requestedDate,
-      startTime: request.startTime,
-      endTime: request.endTime,
-      duration: Number(request.duration) > 0 ? Number(request.duration) : 1,
-      location: request.location,
-      needs: request.specialNeeds,
-      hourlyRate: request.hourlyRate,
-      totalAmount: request.totalAmount,
-      status: 'confirmed',
+    const caregiverUser = await User.findById(caregiverId).select('name');
+    createNotification({
+      type: 'booking_approved',
+      title: 'Booking Request Approved',
+      message: `${caregiverUser?.name || 'The caregiver'} approved your ${request.serviceType} request. Pay the 50% advance to confirm your booking.`,
+      relatedId: request._id,
+      relatedModel: 'BookingRequest',
     });
-
-    // TODO: Send notification/email to care receiver
 
     res.status(200).json({
       success: true,
       message: 'Booking request approved successfully',
-      data: {
-        request,
-        booking,
-      },
+      data: request,
     });
   } catch (error) {
     console.error('Error approving request:', error);
@@ -147,7 +137,14 @@ exports.rejectRequest = async (req, res) => {
     request.responseDate = new Date();
     await request.save();
 
-    // TODO: Send notification/email to care receiver with rejection reason
+    const caregiverUser = await User.findById(caregiverId).select('name');
+    createNotification({
+      type: 'booking_rejected',
+      title: 'Booking Request Declined',
+      message: `${caregiverUser?.name || 'The caregiver'} declined your ${request.serviceType} request. Reason: ${request.rejectionReason}`,
+      relatedId: request._id,
+      relatedModel: 'BookingRequest',
+    });
 
     res.status(200).json({
       success: true,
@@ -291,6 +288,37 @@ exports.createBookingRequest = async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error creating booking request',
+      error: error.message,
+    });
+  }
+};
+
+// @desc    Get the logged-in care receiver's own booking requests
+// @route   GET /api/carereceiver/my-booking-requests
+// @access  Private (Care Receiver)
+exports.getMyBookingRequests = async (req, res) => {
+  try {
+    const careReceiverId = req.user._id;
+
+    // 'confirmed' requests have already been converted into bookings, so they
+    // are excluded here to avoid showing the care receiver duplicate entries.
+    const requests = await BookingRequest.find({
+      careReceiverId,
+      status: { $in: ['pending', 'approved', 'rejected'] },
+    })
+      .populate('caregiverId', 'name email phone profileImage')
+      .sort({ createdAt: -1 });
+
+    res.status(200).json({
+      success: true,
+      count: requests.length,
+      data: requests,
+    });
+  } catch (error) {
+    console.error('Error fetching my booking requests:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching booking requests',
       error: error.message,
     });
   }

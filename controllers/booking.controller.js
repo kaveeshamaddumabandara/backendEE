@@ -1,4 +1,5 @@
 const Booking = require('../models/Booking.model');
+const BookingRequest = require('../models/BookingRequest.model');
 const User = require('../models/User.model');
 const Caregiver = require('../models/Caregiver.model');
 const Payment = require('../models/Payment.model');
@@ -536,6 +537,7 @@ exports.createBooking = async (req, res) => {
     const {
       caregiverId,
       paymentIntentId,
+      bookingRequestId,
     } = req.body;
 
     const {
@@ -692,7 +694,9 @@ exports.createBooking = async (req, res) => {
       remainingPaymentStatus: 'pending_physical',
       advancePaymentIntentId: paymentIntent.id,
       advancePaidAt: new Date(),
-      status: 'pending',
+      // A booking created from an approved request is already accepted by the
+      // caregiver, so paying the advance confirms it directly.
+      status: bookingRequestId ? 'confirmed' : 'pending',
     });
 
     await Payment.create({
@@ -717,6 +721,15 @@ exports.createBooking = async (req, res) => {
         remainingAmount: String(remainingAmount),
       },
     });
+
+    // If this booking originated from an approved request, mark that request
+    // as confirmed so it no longer appears as an actionable request.
+    if (bookingRequestId) {
+      await BookingRequest.findOneAndUpdate(
+        { _id: bookingRequestId, careReceiverId, status: 'approved' },
+        { status: 'confirmed', responseDate: new Date() },
+      );
+    }
 
     // TODO: Send notification to caregiver about new booking
 

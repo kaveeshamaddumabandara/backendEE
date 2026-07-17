@@ -24,5 +24,6 @@ router.get('/available-caregivers', careReceiverController.getAvailableCaregiver
 router.get('/my-bookings', bookingController.getCareReceiverBookings);
 router.post('/bookings', bookingController.createBooking);
 router.post('/booking-request', bookingRequestController.createBookingRequest);
+router.get('/my-booking-requests', bookingRequestController.getMyBookingRequests);
 
 module.exports = router;
